@@ -2,13 +2,13 @@
 """
 每日一键刷新流水线
 ==================
-执行完整流程：读取CSV → 生成HTML → 渲染PNG → 显示到墨水屏
+默认执行：读取CSV → 生成HTML → 渲染PNG（不推送墨水屏）
 
 用法:
-    python run_daily.py                  # 完整流程，每日随机风格
-    python run_daily.py --no-display     # 只生成HTML+PNG，不更新墨水屏
+    python run_daily.py                  # 默认：生成HTML+PNG，每日随机风格
     python run_daily.py --no-screenshot  # 只生成HTML，不截图
     python run_daily.py --style cyberpunk # 指定风格（覆盖随机）
+    python run_daily.py --display        # 额外推送到墨水屏（需在 reTerminal 上运行）
 
 在 reTerminal 上设置每日定时任务:
     crontab -e
@@ -99,8 +99,11 @@ def step_display():
     return True
 
 
-def run(date=None, do_screenshot=True, do_display=True, style=None):
-    """执行完整流水线（style=None 时每日随机选风格）"""
+def run(date=None, do_screenshot=True, do_display=False, style=None):
+    """执行完整流水线（style=None 时每日随机选风格）
+    默认 do_display=False，只生成 HTML+PNG，不推送墨水屏。
+    如需推送到墨水屏，传入 do_display=True 或命令行加 --display。
+    """
     print("╔══════════════════════════════════════════════════╗")
     print("║   reTerminal E1002 看板 - 每日刷新流水线         ║")
     print("╚══════════════════════════════════════════════════╝")
@@ -114,7 +117,9 @@ def run(date=None, do_screenshot=True, do_display=True, style=None):
     steps = [
         ("生成HTML", lambda: step_generate(date, style)),
         ("渲染截图", lambda: step_screenshot()) if do_screenshot else (None, None),
-        ("墨水屏显示", lambda: step_display()) if do_display else (None, None),
+        # 墨水屏推送默认关闭：需在 reTerminal 设备上运行且 IT8951 驱动已加载
+        # 如需启用，命令行加 --display 参数
+        # ("墨水屏显示", lambda: step_display()) if do_display else (None, None),
     ]
 
     success_count = 0
@@ -147,14 +152,14 @@ if __name__ == "__main__":
                         help="指定主题风格（默认每日随机）")
     parser.add_argument("--no-screenshot", action="store_true",
                         help="跳过PNG截图步骤")
-    parser.add_argument("--no-display", action="store_true",
-                        help="跳过墨水屏显示步骤")
+    parser.add_argument("--display", action="store_true",
+                        help="推送到墨水屏（默认关闭，需在 reTerminal 上运行）")
     args = parser.parse_args()
 
     success = run(
         date=args.date,
         do_screenshot=not args.no_screenshot,
-        do_display=not args.no_display,
+        do_display=args.display,
         style=args.style,
     )
     sys.exit(0 if success else 1)

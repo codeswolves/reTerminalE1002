@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>个人仪表盘 800x400</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #080a08;
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    color: #e5e7eb;
+  }
+  .dash {
+    width: 800px;
+    height: 400px;
+    background: #0c0f0c;
+    border: 1px solid #3a5a3a;
+    border-radius: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+  }
+  .topbar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 14px;
+    background: #142014;
+    border: 1px solid #3a5a3a;
+    border-radius: 10px;
+  }
+  .tb-date { font-size: 13px; color: #9bbf7a; }
+  .tb-slogan { font-size: 14px; font-weight: 600; color: #6a8a5a; letter-spacing: 1px; }
+  .tb-weather { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #6a8a5a; }
+  .content {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    gap: 16px;
+  }
+  .col-left { width: 340px; display: flex; flex-direction: column; }
+  .col-right { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+
+  .panel {
+    background: #142014;
+    border: 1px solid #3a5a3a;
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .panel-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #cfe8c0;
+    margin-bottom: 3px;
+    letter-spacing: 0.5px;
+    flex: none;
+  }
+
+  /* gauge */
+  .gauge-panel { align-items: center; }
+  .gauge-panel .panel-title { font-size: 17px; align-self: flex-start; }
+  .gauge-wrap { margin: 1px 0 4px; }
+  .legend { width: 100%; display: flex; flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 6px 16px; }
+  .legend-row {
+    display: flex;
+    align-items: center;
+    font-size: 12px;
+    line-height: 1.2;
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; flex: none; }
+  .lg-name { color: #a8c890; flex: none; }
+  .lg-pct { font-weight: 700; font-size: 14px; margin-left: 4px; }
+
+  /* tasks */
+  .tasks-panel { flex: none; }
+  .task { margin-bottom: 3px; }
+  .task:last-child { margin-bottom: 0; }
+  .task-head {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    margin-bottom: 3px;
+  }
+  .task-val { font-weight: 600; }
+  .bar {
+    display: flex;
+    height: 5px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #1c2a1c;
+  }
+  .seg { height: 100%; }
+  .task-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 6px 16px;
+    margin-top: 6px;
+    font-size: 11px;
+    color: #6a8a5a;
+  }
+  .task-legend .lbl { color: #cfe8c0; }
+  .task-legend .sws { display: flex; gap: 5px; }
+  .task-legend span { display: flex; align-items: center; gap: 4px; }
+  .sw { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+
+  /* calendar */
+  .calendar-panel { flex: 1; }
+  .cal-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3px; }
+  .cal-date { font-size: 12px; }
+  .cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1px;
+  }
+  .cal-grid.wk { margin-bottom: 1px; }
+  .wk span {
+    text-align: center;
+    font-size: 11px;
+    color: #6a8a5a;
+  }
+  .cell {
+    height: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    line-height: 1;
+    border-radius: 4px;
+  }
+  .cell.empty { background: transparent; }
+  .cal-legend {
+    display: flex;
+    justify-content: center;
+    gap: 14px;
+    margin-top: 3px;
+    font-size: 11px;
+  }
+  .cal-legend span { display: flex; align-items: center; gap: 5px; }
+  </style>
+</head>
+<body>
+  <div class="dash">
+    <div class="topbar">
+      <div class="tb-date" id="tbDate">2026年8月1日 周六</div>
+      <div class="tb-slogan">日日精进 · 知行合一</div>
+      <div class="tb-weather">
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4" fill="#fbbf24"/><g stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round"><line x1="8" y1="0.5" x2="8" y2="2.5"/><line x1="8" y1="13.5" x2="8" y2="15.5"/><line x1="0.5" y1="8" x2="2.5" y2="8"/><line x1="13.5" y1="8" x2="15.5" y2="8"/><line x1="2.5" y1="2.5" x2="3.9" y2="3.9"/><line x1="12.1" y1="12.1" x2="13.5" y2="13.5"/><line x1="13.5" y1="2.5" x2="12.1" y2="3.9"/><line x1="3.9" y1="12.1" x2="2.5" y2="13.5"/></g></svg>
+        <span>北京 27°C 晴</span>
+      </div>
+    </div>
+    <div class="content">
+    <div class="col-left">
+      <div class="panel gauge-panel" style="flex:1;">
+        <div class="panel-title" style="font-size:17px;">2026年目标</div>
+        <div class="gauge-wrap">
+          <svg viewBox="0 0 210 210" width="250" height="250" role="img" aria-label="三环进度仪表盘">
+            <title>2026年目标三环进度</title>
+            <g transform="rotate(-120 105 105)">
+              <circle cx="105" cy="105" r="92" fill="none" stroke="#1c2a1c" stroke-width="20"/><circle cx="105" cy="105" r="92" fill="none" stroke="#7faf5f" stroke-width="20" stroke-linecap="round" stroke-dasharray="161.85 578.05"/><circle cx="105" cy="105" r="58" fill="none" stroke="#1c2a1c" stroke-width="20"/><circle cx="105" cy="105" r="58" fill="none" stroke="#c75a5a" stroke-width="20" stroke-linecap="round" stroke-dasharray="240.52 364.42"/><circle cx="105" cy="105" r="24" fill="none" stroke="#1c2a1c" stroke-width="20"/><circle cx="105" cy="105" r="24" fill="none" stroke="#c7a35a" stroke-width="20" stroke-linecap="round" stroke-dasharray="49.76 150.80"/>
+            </g>
+            <text x="105" y="13" text-anchor="middle" dominant-baseline="middle" fill="#cfe8c0" font-size="14" font-weight="700">28%</text><text x="105" y="47" text-anchor="middle" dominant-baseline="middle" fill="#cfe8c0" font-size="14" font-weight="700">66%</text><text x="105" y="81" text-anchor="middle" dominant-baseline="middle" fill="#cfe8c0" font-size="14" font-weight="700">33%</text>
+          </svg>
+        </div>
+        <div class="legend"><div class="legend-row"><span class="dot" style="background:#7faf5f"></span><span class="lg-name" style="color:#a8c890">减重40斤</span><span class="lg-pct" style="color:#7faf5f">28%</span></div><div class="legend-row"><span class="dot" style="background:#c75a5a"></span><span class="lg-name" style="color:#a8c890">论文3篇</span><span class="lg-pct" style="color:#c75a5a">66%</span></div><div class="legend-row"><span class="dot" style="background:#c7a35a"></span><span class="lg-name" style="color:#a8c890">专利3篇</span><span class="lg-pct" style="color:#c7a35a">33%</span></div></div>
+      </div>
+    </div>
+    <div class="col-right">
+      <div class="panel tasks-panel">
+        <div class="panel-title" style="color:#cfe8c0">每日任务</div>
+        <div class="task">
+          <div class="task-head"><span style="color:#cfe8c0">完成项目需求文档</span><span class="task-val" style="color:#9bbf7a">100%</span></div>
+          <div class="bar">
+            <div class="seg" style="width:60%;background:#7faf5f"></div>
+            <div class="seg" style="width:40%;background:rgba(127,175,95,0.35)"></div>
+          </div>
+        </div><div class="task">
+          <div class="task-head"><span style="color:#cfe8c0">前端页面开发</span><span class="task-val" style="color:#9bbf7a">75%</span></div>
+          <div class="bar">
+            <div class="seg" style="width:45%;background:#c75a5a"></div>
+            <div class="seg" style="width:30%;background:rgba(199,90,90,0.35)"></div>
+          </div>
+        </div><div class="task">
+          <div class="task-head"><span style="color:#cfe8c0">代码审查PR#42</span><span class="task-val" style="color:#9bbf7a">100%</span></div>
+          <div class="bar">
+            <div class="seg" style="width:60%;background:#c7a35a"></div>
+            <div class="seg" style="width:40%;background:rgba(199,163,90,0.35)"></div>
+          </div>
+        </div>
+        <div class="task-legend">
+        <span class="lbl" style="color:#cfe8c0">昨天完成</span>
+        <span class="sws"><i class="sw" style="background:#7faf5f"></i><i class="sw" style="background:#c75a5a"></i><i class="sw" style="background:#c7a35a"></i></span>
+        <span class="lbl" style="color:#cfe8c0">今天推进</span>
+        <span class="sws"><i class="sw" style="background:rgba(127,175,95,0.35)"></i><i class="sw" style="background:rgba(199,90,90,0.35)"></i><i class="sw" style="background:rgba(199,163,90,0.35)"></i></span>
+      </div>
+      </div>
+      <div class="panel calendar-panel">
+        <div class="cal-header">
+          <span class="panel-title" style="margin:0;color:#cfe8c0">健身打卡</span>
+          <span class="cal-date" style="color:#6a8a5a">2026 年 08 月</span>
+        </div>
+        <div class="cal-grid wk"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+        <div class="cal-grid"><span class="cell empty"></span><span class="cell empty"></span><span class="cell empty"></span><span class="cell empty"></span><span class="cell empty"></span><span class="cell today" style="background:#c7a35a;color:#0c0f0c">1</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">2</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">3</span><span class="cell" style="background:#1c2a1c;color:#cfe8c0">4</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">5</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">6</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">7</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">8</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">9</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">10</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">11</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">12</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">13</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">14</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">15</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">16</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">17</span><span class="cell" style="background:#1c2a1c;color:#cfe8c0">18</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">19</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">20</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">21</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">22</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">23</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">24</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">25</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">26</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">27</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">28</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">29</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">30</span><span class="cell done" style="background:rgba(127,175,95,0.25);color:#7faf5f">31</span></div>
+        <div class="cal-legend">
+          <span style="color:#6a8a5a"><i class="sw" style="background:#c7a35a"></i>今天</span>
+          <span style="color:#6a8a5a"><i class="sw" style="background:rgba(127,175,95,0.25)"></i>已打卡</span>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+  <script>
+    (function(){
+      var d = new Date();
+      var wk = ['周日','周一','周二','周三','周四','周五','周六'];
+      var s = d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日 '+wk[d.getDay()];
+      var el = document.getElementById('tbDate');
+      if(el) el.textContent = s;
+    })();
+  </script>
+</body>
+</html>

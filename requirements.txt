@@ -1,0 +1,9 @@
+# reTerminal E-Ink Dashboard Generator
+# 核心依赖（HTML 生成，无需额外安装）
+# Python 内置模块: csv, datetime, pathlib, json
+
+# 可选：截图工具
+playwright>=1.40.0
+
+# 可选：reTerminal 墨水屏驱动
+# Pillow>=10.0.0

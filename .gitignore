@@ -8,5 +8,4 @@ env/
 .DS_Store
 Thumbs.db
 *.log
-output/*.png
 output/*.bmp

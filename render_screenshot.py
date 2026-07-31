@@ -5,12 +5,16 @@ HTML 截图工具
 使用 Playwright 将生成的 HTML 看板渲染为 800x480 PNG 图片，
 供 reTerminal 墨水屏显示。
 
+优先使用系统已安装的 Edge/Chrome，无需额外下载 playwright 浏览器。
+若系统无 Edge/Chrome，再回退到 playwright 自带 chromium（需 playwright install）。
+
 用法:
     python render_screenshot.py                    # 截取 output/dashboard.html
     python render_screenshot.py --html custom.html # 指定HTML文件
 
 依赖:
     pip install playwright
+    # 可选（无系统 Edge/Chrome 时需要）:
     playwright install chromium
 """
 
@@ -23,6 +27,39 @@ OUTPUT_DIR = BASE_DIR / "output"
 DEFAULT_HTML = OUTPUT_DIR / "dashboard.html"
 DEFAULT_PNG = OUTPUT_DIR / "dashboard.png"
 
+# 浏览器启动顺序：系统 Edge → 系统 Chrome → playwright 自带 chromium
+LAUNCH_CHANNELS = [
+    {"channel": "msedge", "desc": "系统 Microsoft Edge"},
+    {"channel": "chrome", "desc": "系统 Google Chrome"},
+    {"channel": None, "desc": "playwright 自带 chromium"},
+]
+
+
+def _launch_browser(p):
+    """按顺序尝试启动浏览器，返回 browser 句柄；全部失败则抛出最后一个异常"""
+    last_err = None
+    for cfg in LAUNCH_CHANNELS:
+        try:
+            print(f"[INFO] 尝试启动: {cfg['desc']}")
+            browser = p.chromium.launch(channel=cfg["channel"]) if cfg["channel"] \
+                else p.chromium.launch()
+            print(f"[OK] 已启动: {cfg['desc']}")
+            return browser
+        except Exception as e:
+            msg = str(e)
+            # 通道不可用通常是 "channel not installed" 类错误，静默跳过
+            if "not found" in msg.lower() or "not installed" in msg.lower() \
+                or "executable doesn't exist" in msg.lower():
+                print(f"[WARN] {cfg['desc']} 不可用，尝试下一个")
+                last_err = e
+                continue
+            # 其他错误直接抛出
+            raise
+    raise RuntimeError(
+        f"所有浏览器启动方式均失败。最后错误: {last_err}\n"
+        "请安装系统 Edge/Chrome，或运行: playwright install chromium"
+    )
+
 
 def render_screenshot(html_path, png_path, width=800, height=480):
     """将HTML渲染为PNG截图"""
@@ -31,7 +68,9 @@ def render_screenshot(html_path, png_path, width=800, height=480):
     except ImportError:
         print("[ERROR] 未安装 playwright，请执行:")
         print("  pip install playwright")
-        print("  playwright install chromium")
+        print("  # 然后任选其一:")
+        print("  #   1) 系统有 Edge/Chrome 即可直接用（推荐）")
+        print("  #   2) playwright install chromium")
         sys.exit(1)
 
     html_path = Path(html_path)
@@ -46,7 +85,7 @@ def render_screenshot(html_path, png_path, width=800, height=480):
     print(f"[INFO] 分辨率: {width}x{height}")
 
     with sync_playwright() as p:
-        browser = p.chromium.launch()
+        browser = _launch_browser(p)
         page = browser.new_page(viewport={"width": width, "height": height})
         page.goto(file_url, wait_until="networkidle")
         # 等待渲染完成

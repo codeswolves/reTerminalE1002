@@ -7,7 +7,7 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    background: #1a1a2e;
+    background: #f5f6f8;
     font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
     display: flex;
     align-items: center;
@@ -18,8 +18,8 @@
   .dash {
     width: 800px;
     height: 400px;
-    background: #2d2d44;
-    border: 1px solid #ffd93d;
+    background: #ffffff;
+    border: 1px solid #d0d6e0;
     border-radius: 14px;
     display: flex;
     flex-direction: column;
@@ -32,13 +32,13 @@
     align-items: center;
     justify-content: space-between;
     padding: 6px 14px;
-    background: #3d3d5c;
-    border: 1px solid #ffd93d;
+    background: #f0f2f7;
+    border: 1px solid #d0d6e0;
     border-radius: 10px;
   }
-  .tb-date { font-size: 13px; color: #ffd93d; }
-  .tb-slogan { font-size: 14px; font-weight: 600; color: #6bcb77; letter-spacing: 1px; }
-  .tb-weather { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #6bcb77; }
+  .tb-date { font-size: 13px; color: #5a6577; }
+  .tb-slogan { font-size: 14px; font-weight: 600; color: #1f2733; letter-spacing: 1px; }
+  .tb-weather { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #8893a7; }
   .content {
     flex: 1;
     min-height: 0;
@@ -49,8 +49,8 @@
   .col-right { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 
   .panel {
-    background: #3d3d5c;
-    border: 1px solid #ffd93d;
+    background: #f0f2f7;
+    border: 1px solid #d0d6e0;
     border-radius: 10px;
     padding: 10px 12px;
     display: flex;
@@ -61,7 +61,7 @@
   .panel-title {
     font-size: 14px;
     font-weight: 600;
-    color: #ffd93d;
+    color: #1f2733;
     margin-bottom: 3px;
     letter-spacing: 0.5px;
     flex: none;
@@ -79,7 +79,7 @@
     line-height: 1.2;
   }
   .dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; flex: none; }
-  .lg-name { color: #a8e6cf; flex: none; }
+  .lg-name { color: #5a6577; flex: none; }
   .lg-pct { font-weight: 700; font-size: 14px; margin-left: 4px; }
 
   /* tasks */
@@ -98,7 +98,7 @@
     height: 5px;
     border-radius: 4px;
     overflow: hidden;
-    background: #4a4a6a;
+    background: #e3e8f0;
   }
   .seg { height: 100%; }
   .task-legend {
@@ -109,9 +109,9 @@
     gap: 6px 16px;
     margin-top: 6px;
     font-size: 11px;
-    color: #6bcb77;
+    color: #8893a7;
   }
-  .task-legend .lbl { color: #ffd93d; }
+  .task-legend .lbl { color: #3a4456; }
   .task-legend .sws { display: flex; gap: 5px; }
   .task-legend span { display: flex; align-items: center; gap: 4px; }
   .sw { width: 10px; height: 10px; border-radius: 2px; flex: none; }
@@ -129,7 +129,7 @@
   .wk span {
     text-align: center;
     font-size: 11px;
-    color: #6bcb77;
+    color: #8893a7;
   }
   .cell {
     height: 14px;
@@ -169,53 +169,53 @@
           <svg viewBox="0 0 210 210" width="250" height="250" role="img" aria-label="三环进度仪表盘">
             <title>2026年目标三环进度</title>
             <g transform="rotate(-120 105 105)">
-              <circle cx="105" cy="105" r="92" fill="none" stroke="#4a4a6a" stroke-width="20"/><circle cx="105" cy="105" r="92" fill="none" stroke="#ff6b6b" stroke-width="20" stroke-linecap="round" stroke-dasharray="161.85 578.05"/><circle cx="105" cy="105" r="58" fill="none" stroke="#4a4a6a" stroke-width="20"/><circle cx="105" cy="105" r="58" fill="none" stroke="#4d96ff" stroke-width="20" stroke-linecap="round" stroke-dasharray="240.52 364.42"/><circle cx="105" cy="105" r="24" fill="none" stroke="#4a4a6a" stroke-width="20"/><circle cx="105" cy="105" r="24" fill="none" stroke="#6bcb77" stroke-width="20" stroke-linecap="round" stroke-dasharray="49.76 150.80"/>
+              <circle cx="105" cy="105" r="92" fill="none" stroke="#d0d6e0" stroke-width="20"/><circle cx="105" cy="105" r="92" fill="none" stroke="#3b6fb0" stroke-width="20" stroke-linecap="round" stroke-dasharray="161.85 578.05"/><circle cx="105" cy="105" r="58" fill="none" stroke="#d0d6e0" stroke-width="20"/><circle cx="105" cy="105" r="58" fill="none" stroke="#d6453d" stroke-width="20" stroke-linecap="round" stroke-dasharray="240.52 364.42"/><circle cx="105" cy="105" r="24" fill="none" stroke="#d0d6e0" stroke-width="20"/><circle cx="105" cy="105" r="24" fill="none" stroke="#2e9e5b" stroke-width="20" stroke-linecap="round" stroke-dasharray="49.76 150.80"/>
             </g>
-            <text x="105" y="13" text-anchor="middle" dominant-baseline="middle" fill="#ffd93d" font-size="14" font-weight="700">28%</text><text x="105" y="47" text-anchor="middle" dominant-baseline="middle" fill="#ffd93d" font-size="14" font-weight="700">66%</text><text x="105" y="81" text-anchor="middle" dominant-baseline="middle" fill="#ffd93d" font-size="14" font-weight="700">33%</text>
+            <text x="105" y="13" text-anchor="middle" dominant-baseline="middle" fill="#1f2733" font-size="14" font-weight="700">28%</text><text x="105" y="47" text-anchor="middle" dominant-baseline="middle" fill="#1f2733" font-size="14" font-weight="700">66%</text><text x="105" y="81" text-anchor="middle" dominant-baseline="middle" fill="#1f2733" font-size="14" font-weight="700">33%</text>
           </svg>
         </div>
-        <div class="legend"><div class="legend-row"><span class="dot" style="background:#ff6b6b"></span><span class="lg-name" style="color:#a8e6cf">减重40斤</span><span class="lg-pct" style="color:#ff6b6b">28%</span></div><div class="legend-row"><span class="dot" style="background:#4d96ff"></span><span class="lg-name" style="color:#a8e6cf">论文3篇</span><span class="lg-pct" style="color:#4d96ff">66%</span></div><div class="legend-row"><span class="dot" style="background:#6bcb77"></span><span class="lg-name" style="color:#a8e6cf">专利3篇</span><span class="lg-pct" style="color:#6bcb77">33%</span></div></div>
+        <div class="legend"><div class="legend-row"><span class="dot" style="background:#3b6fb0"></span><span class="lg-name" style="color:#5a6577">减重40斤</span><span class="lg-pct" style="color:#3b6fb0">28%</span></div><div class="legend-row"><span class="dot" style="background:#d6453d"></span><span class="lg-name" style="color:#5a6577">论文3篇</span><span class="lg-pct" style="color:#d6453d">66%</span></div><div class="legend-row"><span class="dot" style="background:#2e9e5b"></span><span class="lg-name" style="color:#5a6577">专利3篇</span><span class="lg-pct" style="color:#2e9e5b">33%</span></div></div>
       </div>
     </div>
     <div class="col-right">
       <div class="panel tasks-panel">
-        <div class="panel-title" style="color:#ffd93d">每日任务</div>
+        <div class="panel-title" style="color:#1f2733">每日任务</div>
         <div class="task">
-          <div class="task-head"><span style="color:#ffd93d">完成项目需求文档</span><span class="task-val" style="color:#6bcb77">100%</span></div>
+          <div class="task-head"><span style="color:#3a4456">完成项目需求文档</span><span class="task-val" style="color:#1f2733">100%</span></div>
           <div class="bar">
-            <div class="seg" style="width:60%;background:#ff6b6b"></div>
-            <div class="seg" style="width:40%;background:rgba(255,107,107,0.35)"></div>
+            <div class="seg" style="width:60%;background:#3b6fb0"></div>
+            <div class="seg" style="width:40%;background:rgba(59,111,176,0.35)"></div>
           </div>
         </div><div class="task">
-          <div class="task-head"><span style="color:#ffd93d">前端页面开发</span><span class="task-val" style="color:#6bcb77">75%</span></div>
+          <div class="task-head"><span style="color:#3a4456">前端页面开发</span><span class="task-val" style="color:#1f2733">75%</span></div>
           <div class="bar">
-            <div class="seg" style="width:45%;background:#4d96ff"></div>
-            <div class="seg" style="width:30%;background:rgba(77,150,255,0.35)"></div>
+            <div class="seg" style="width:45%;background:#d6453d"></div>
+            <div class="seg" style="width:30%;background:rgba(214,69,61,0.35)"></div>
           </div>
         </div><div class="task">
-          <div class="task-head"><span style="color:#ffd93d">代码审查PR#42</span><span class="task-val" style="color:#6bcb77">100%</span></div>
+          <div class="task-head"><span style="color:#3a4456">代码审查PR#42</span><span class="task-val" style="color:#1f2733">100%</span></div>
           <div class="bar">
-            <div class="seg" style="width:60%;background:#6bcb77"></div>
-            <div class="seg" style="width:40%;background:rgba(107,203,119,0.35)"></div>
+            <div class="seg" style="width:60%;background:#2e9e5b"></div>
+            <div class="seg" style="width:40%;background:rgba(46,158,91,0.35)"></div>
           </div>
         </div>
         <div class="task-legend">
-        <span class="lbl" style="color:#ffd93d">昨天完成</span>
-        <span class="sws"><i class="sw" style="background:#ff6b6b"></i><i class="sw" style="background:#4d96ff"></i><i class="sw" style="background:#6bcb77"></i></span>
-        <span class="lbl" style="color:#ffd93d">今天推进</span>
-        <span class="sws"><i class="sw" style="background:rgba(255,107,107,0.35)"></i><i class="sw" style="background:rgba(77,150,255,0.35)"></i><i class="sw" style="background:rgba(107,203,119,0.35)"></i></span>
+        <span class="lbl" style="color:#3a4456">昨天完成</span>
+        <span class="sws"><i class="sw" style="background:#3b6fb0"></i><i class="sw" style="background:#d6453d"></i><i class="sw" style="background:#2e9e5b"></i></span>
+        <span class="lbl" style="color:#3a4456">今天推进</span>
+        <span class="sws"><i class="sw" style="background:rgba(59,111,176,0.35)"></i><i class="sw" style="background:rgba(214,69,61,0.35)"></i><i class="sw" style="background:rgba(46,158,91,0.35)"></i></span>
       </div>
       </div>
       <div class="panel calendar-panel">
         <div class="cal-header">
-          <span class="panel-title" style="margin:0;color:#ffd93d">健身打卡</span>
-          <span class="cal-date" style="color:#6bcb77">2026 年 08 月</span>
+          <span class="panel-title" style="margin:0;color:#1f2733">健身打卡</span>
+          <span class="cal-date" style="color:#8893a7">2026 年 08 月</span>
         </div>
         <div class="cal-grid wk"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
-        <div class="cal-grid"><span class="cell empty"></span><span class="cell empty"></span><span class="cell empty"></span><span class="cell empty"></span><span class="cell empty"></span><span class="cell today" style="background:#ff6b6b;color:#2d2d44">1</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">2</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">3</span><span class="cell" style="background:#4a4a6a;color:#ffd93d">4</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">5</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">6</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">7</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">8</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">9</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">10</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">11</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">12</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">13</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">14</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">15</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">16</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">17</span><span class="cell" style="background:#4a4a6a;color:#ffd93d">18</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">19</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">20</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">21</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">22</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">23</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">24</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">25</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">26</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">27</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">28</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">29</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">30</span><span class="cell done" style="background:rgba(107,203,119,0.25);color:#6bcb77">31</span></div>
+        <div class="cal-grid"><span class="cell empty"></span><span class="cell empty"></span><span class="cell empty"></span><span class="cell empty"></span><span class="cell empty"></span><span class="cell today" style="background:#d29922;color:#ffffff">1</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">2</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">3</span><span class="cell" style="background:#e3e8f0;color:#3a4456">4</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">5</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">6</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">7</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">8</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">9</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">10</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">11</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">12</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">13</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">14</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">15</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">16</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">17</span><span class="cell" style="background:#e3e8f0;color:#3a4456">18</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">19</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">20</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">21</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">22</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">23</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">24</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">25</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">26</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">27</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">28</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">29</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">30</span><span class="cell done" style="background:rgba(46,158,91,0.18);color:#2e9e5b">31</span></div>
         <div class="cal-legend">
-          <span style="color:#6bcb77"><i class="sw" style="background:#ff6b6b"></i>今天</span>
-          <span style="color:#6bcb77"><i class="sw" style="background:rgba(107,203,119,0.25)"></i>已打卡</span>
+          <span style="color:#8893a7"><i class="sw" style="background:#d29922"></i>今天</span>
+          <span style="color:#8893a7"><i class="sw" style="background:rgba(46,158,91,0.18)"></i>已打卡</span>
         </div>
       </div>
     </div>

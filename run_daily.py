@@ -5,19 +5,18 @@
 默认执行：读取CSV → 生成HTML → 渲染PNG（不推送墨水屏）
 
 用法:
-    python run_daily.py                  # 默认：生成HTML+PNG，每日随机风格
+    python run_daily.py                  # 默认：生成HTML+PNG，固定 light 风格
     python run_daily.py --no-screenshot  # 只生成HTML，不截图
-    python run_daily.py --style cyberpunk # 指定风格（覆盖随机）
+    python run_daily.py --style cyberpunk # 指定风格（覆盖默认 light）
     python run_daily.py --display        # 额外推送到墨水屏（需在 reTerminal 上运行）
 
 在 reTerminal 上设置每日定时任务:
     crontab -e
-    # 每天早上 8:00 自动刷新（随机风格）
+    # 每天早上 8:00 自动刷新（固定 light 风格）
     0 8 * * * cd /home/pi/reTerminal && python run_daily.py
 """
 
 import argparse
-import random
 import subprocess
 import sys
 from pathlib import Path
@@ -25,25 +24,23 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent
 OUTPUT_DIR = BASE_DIR / "output"
 
-# 可用主题列表（与 generate_dashboard.py 的 THEMES 保持一致）
+# 默认固定使用的风格
+DEFAULT_STYLE = "light"
+
+# 可用主题列表（与 generate_dashboard.py 的 THEMES 保持一致），供 --style 选择
 AVAILABLE_STYLES = [
     "default", "cyberpunk", "dracula", "fui",
     "light", "macaron", "morandi", "pixel", "tactical",
 ]
 
 
-def pick_random_style():
-    """随机选择一种主题风格"""
-    return random.choice(AVAILABLE_STYLES)
-
-
 def step_generate(date=None, style=None):
-    """步骤1: 生成HTML看板（每日随机风格）"""
+    """步骤1: 生成HTML看板（默认 light 风格）"""
     print("=" * 50)
     print("[STEP 1/3] 生成HTML看板")
     print("=" * 50)
     if style is None:
-        style = pick_random_style()
+        style = DEFAULT_STYLE
     print(f"[INFO] 今日风格: {style}")
     cmd = [sys.executable, str(BASE_DIR / "generate_dashboard.py"),
            "--style", style]
@@ -100,7 +97,7 @@ def step_display():
 
 
 def run(date=None, do_screenshot=True, do_display=False, style=None):
-    """执行完整流水线（style=None 时每日随机选风格）
+    """执行完整流水线（style=None 时固定使用 DEFAULT_STYLE=light）
     默认 do_display=False，只生成 HTML+PNG，不推送墨水屏。
     如需推送到墨水屏，传入 do_display=True 或命令行加 --display。
     """
@@ -110,7 +107,7 @@ def run(date=None, do_screenshot=True, do_display=False, style=None):
     print()
 
     if style is None:
-        style = pick_random_style()
+        style = DEFAULT_STYLE
     print(f"[INFO] 今日使用风格: {style}")
     print()
 
@@ -149,7 +146,7 @@ if __name__ == "__main__":
                         help="目标日期 (YYYY-MM-DD)")
     parser.add_argument("--style", type=str, default=None,
                         choices=AVAILABLE_STYLES,
-                        help="指定主题风格（默认每日随机）")
+                        help="指定主题风格（默认固定 light）")
     parser.add_argument("--no-screenshot", action="store_true",
                         help="跳过PNG截图步骤")
     parser.add_argument("--display", action="store_true",

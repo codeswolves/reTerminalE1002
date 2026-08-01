@@ -1,6 +1,6 @@
 r"""
 generate_dashboard.py
-生成 reTerminal 用的 800x400 仪表盘 HTML。
+生成 reTerminal 用的 800x480 仪表盘 HTML。
 结构完全对齐 E:\WorkBuddy\design\dashboard.html 模板。
 支持多主题换肤 (--style)。
 """
@@ -236,26 +236,12 @@ THEMES = {
         "cal_date_color": "#6a8a5a", "cal_legend_color": "#6a8a5a",
     },
 }
-DEFAULT_STYLE = "default"
+DEFAULT_STYLE = "light"
 
 
 # ----------------------------------------------------------------------------
 # 天气
 # ----------------------------------------------------------------------------
-WEATHER_DESC_MAP = {
-    "sunny": ("晴", "sun"), "clear": ("晴", "sun"), "partly cloudy": ("多云", "cloud-sun"),
-    "cloudy": ("阴", "cloud"), "overcast": ("阴", "cloud"),
-    "mist": ("雾", "fog"), "fog": ("雾", "fog"),
-    "patchy rain possible": ("阵雨", "cloud-rain"), "patchy rain nearby": ("阵雨", "cloud-rain"),
-    "light rain": ("小雨", "cloud-rain"), "light drizzle": ("毛毛雨", "cloud-rain"),
-    "moderate rain": ("中雨", "cloud-rain"), "heavy rain": ("大雨", "cloud-rain"),
-    "thundery outbreaks possible": ("雷阵雨", "cloud-bolt"),
-    "patchy light rain": ("小雨", "cloud-rain"), "moderate or heavy rain": ("大雨", "cloud-rain"),
-    "light snow": ("小雪", "snow"), "moderate snow": ("中雪", "snow"),
-    "heavy snow": ("大雪", "snow"), "blizzard": ("暴雪", "snow"),
-    "patchy snow possible": ("阵雪", "snow"), "rain shower": ("阵雨", "cloud-rain"),
-    "smoky haze": ("霾", "smog"), "freezing fog": ("冻雾", "fog"),
-}
 
 # 简化 SVG 图标（16x16, viewBox 0 0 16 16）
 SVG_ICONS = {
@@ -266,20 +252,42 @@ SVG_ICONS = {
     "fog": '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><g stroke="#9ca3af" stroke-width="1.3" stroke-linecap="round"><line x1="2" y1="5" x2="14" y2="5"/><line x1="3" y1="8" x2="13" y2="8"/><line x1="2" y1="11" x2="14" y2="11"/></g></svg>',
     "snow": '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 7 a3 3 0 1 1 5.5 -1.5 h0.5 a2 2 0 1 1 0 4 H4 a2.5 2.5 0 0 1 0 -2.5z" fill="#dbe4f0"/><g stroke="#dbe4f0" stroke-width="1" stroke-linecap="round"><line x1="6" y1="12" x2="6" y2="14.5"/><line x1="9" y1="12" x2="9" y2="14.5"/><line x1="12" y1="12" x2="12" y2="14.5"/></g></svg>',
     "cloud-bolt": '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 7 a3 3 0 1 1 5.5 -1.5 h0.5 a2 2 0 1 1 0 4 H4 a2.5 2.5 0 0 1 0 -2.5z" fill="#6b7280"/><path d="M8 9 L6 13 L8 13 L7 15.5 L11 11 L9 11 L10 9 Z" fill="#fbbf24"/></svg>',
-    "smog": '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><g stroke="#9ca3af" stroke-width="1.3" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="3" y1="7" x2="13" y2="7"/><line x1="2" y1="10" x2="14" y2="10"/><line x1="3" y1="13" x2="13" y2="13"/></g></svg>',
 }
 
 
+# WMO 天气代码 -> (中文描述, 图标key)
+WMO_CODE_MAP = {
+    0: ("晴", "sun"), 1: ("晴", "cloud-sun"), 2: ("少云", "cloud-sun"), 3: ("多云", "cloud"),
+    45: ("雾", "fog"), 48: ("雾凇", "fog"),
+    51: ("毛毛雨", "cloud-rain"), 53: ("毛毛雨", "cloud-rain"), 55: ("毛毛雨", "cloud-rain"),
+    56: ("冻毛毛雨", "cloud-rain"), 57: ("冻毛毛雨", "cloud-rain"),
+    61: ("小雨", "cloud-rain"), 63: ("中雨", "cloud-rain"), 65: ("大雨", "cloud-rain"),
+    66: ("冻雨", "cloud-rain"), 67: ("冻雨", "cloud-rain"),
+    71: ("小雪", "snow"), 73: ("中雪", "snow"), 75: ("大雪", "snow"), 77: ("雪粒", "snow"),
+    80: ("阵雨", "cloud-rain"), 81: ("阵雨", "cloud-rain"), 82: ("强阵雨", "cloud-rain"),
+    85: ("阵雪", "snow"), 86: ("强阵雪", "snow"),
+    95: ("雷阵雨", "cloud-bolt"), 96: ("雷阵雨伴冰雹", "cloud-bolt"), 99: ("雷阵雨伴冰雹", "cloud-bolt"),
+}
+
+# 北京固定经纬度
+BEIJING_LAT, BEIJING_LON = 39.9042, 116.4074
+
+
 def fetch_weather(city="Beijing"):
+    """固定查询北京天气（open-meteo，无需 API key，纯气象数据）。"""
     try:
-        url = f"https://wttr.in/{city}?format=j1"
+        url = (
+            f"https://api.open-meteo.com/v1/forecast"
+            f"?latitude={BEIJING_LAT}&longitude={BEIJING_LON}"
+            f"&current=temperature_2m,weather_code"
+        )
         req = urllib.request.Request(url, headers={"User-Agent": "curl/7.0"})
         with urllib.request.urlopen(req, timeout=8) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-        cur = data["current_condition"][0]
-        desc = cur["weatherDesc"][0]["value"].strip().lower()
-        temp = cur["temp_C"]
-        zh, icon_key = WEATHER_DESC_MAP.get(desc, (desc.title(), "cloud"))
+        cur = data["current"]
+        temp = round(float(cur["temperature_2m"]))
+        code = int(cur["weather_code"])
+        zh, icon_key = WMO_CODE_MAP.get(code, ("未知", "cloud"))
         icon = SVG_ICONS.get(icon_key, SVG_ICONS["cloud"])
         return {"text": f"北京 {temp}°C {zh}", "icon": icon}
     except Exception:
@@ -378,7 +386,7 @@ def build_gauge_svg(weight_info, goals, theme):
     for i, (r, pct, color) in enumerate(rings):
         texts += f'<text x="105" y="{text_y[i]}" text-anchor="middle" dominant-baseline="middle" fill="{theme["ring_text"]}" font-size="14" font-weight="700">{pct}%</text>'
 
-    return f'''<svg viewBox="0 0 210 210" width="250" height="250" role="img" aria-label="三环进度仪表盘">
+    return f'''<svg viewBox="0 0 210 210" width="300" height="300" role="img" aria-label="三环进度仪表盘">
             <title>2026年目标三环进度</title>
             <g transform="rotate(-120 105 105)">
               {circles}
@@ -395,7 +403,7 @@ def build_legend(weight_info, goals, theme):
     ]
     items = ""
     for color, name, pct in rows:
-        items += f'<div class="legend-row"><span class="dot" style="background:{color}"></span><span class="lg-name" style="color:{theme["legend_name"]}">{name}</span><span class="lg-pct" style="color:{color}">{pct}%</span></div>'
+        items += f'<div class="legend-row"><span class="dot" style="background:{color}"></span><span class="lg-name">{name}</span><span class="lg-pct" style="color:{color}">{pct}%</span></div>'
     return f'<div class="legend">{items}</div>'
 
 
@@ -470,7 +478,7 @@ def build_calendar(fitness_rows, target_date, theme):
     return f'''<div class="panel calendar-panel">
         <div class="cal-header">
           <span class="panel-title" style="margin:0;color:{theme["panel_title_color"]}">健身打卡</span>
-          <span class="cal-date" style="color:{theme["cal_date_color"]}">{year} 年 {month:02d} 月</span>
+          <span class="cal-date">{year} 年 {month:02d} 月</span>
         </div>
         <div class="cal-grid wk">{head}</div>
         <div class="cal-grid">{"".join(cells)}</div>
@@ -505,13 +513,13 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
   }}
   .dash {{
     width: 800px;
-    height: 400px;
+    height: 480px;
     background: {theme['dash_bg']};
     border: 1px solid {theme['dash_border']};
     border-radius: 14px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 14px;
     padding: 16px;
   }}
   .topbar {{
@@ -519,14 +527,14 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 6px 14px;
+    padding: 9px 16px;
     background: {theme['topbar_bg']};
     border: 1px solid {theme['topbar_border']};
     border-radius: 10px;
   }}
-  .tb-date {{ font-size: 13px; color: {theme['date_color']}; }}
-  .tb-slogan {{ font-size: 14px; font-weight: 600; color: {theme['slogan_color']}; letter-spacing: 1px; }}
-  .tb-weather {{ display: flex; align-items: center; gap: 6px; font-size: 13px; color: {theme['weather_color']}; }}
+  .tb-date {{ font-size: 16px; color: {theme['date_color']}; }}
+  .tb-slogan {{ font-size: 18px; font-weight: 600; color: {theme['slogan_color']}; letter-spacing: 1px; }}
+  .tb-weather {{ display: flex; align-items: center; gap: 8px; font-size: 16px; color: {theme['weather_color']}; }}
   .content {{
     flex: 1;
     min-height: 0;
@@ -534,13 +542,13 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
     gap: 16px;
   }}
   .col-left {{ width: 340px; display: flex; flex-direction: column; }}
-  .col-right {{ flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }}
+  .col-right {{ flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; }}
 
   .panel {{
     background: {theme['panel_bg']};
     border: 1px solid {theme['panel_border']};
     border-radius: 10px;
-    padding: 10px 12px;
+    padding: 8px 12px;
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -557,8 +565,7 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
 
   /* gauge */
   .gauge-panel {{ align-items: center; }}
-  .gauge-panel .panel-title {{ font-size: 17px; align-self: flex-start; }}
-  .gauge-wrap {{ margin: 1px 0 4px; }}
+  .gauge-wrap {{ margin: 4px 0 4px; }}
   .legend {{ width: 100%; display: flex; flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 6px 16px; }}
   .legend-row {{
     display: flex;
@@ -572,18 +579,18 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
 
   /* tasks */
   .tasks-panel {{ flex: none; }}
-  .task {{ margin-bottom: 3px; }}
+  .task {{ margin-bottom: 5px; }}
   .task:last-child {{ margin-bottom: 0; }}
   .task-head {{
     display: flex;
     justify-content: space-between;
     font-size: 12px;
-    margin-bottom: 3px;
+    margin-bottom: 4px;
   }}
   .task-val {{ font-weight: 600; }}
   .bar {{
     display: flex;
-    height: 5px;
+    height: 8px;
     border-radius: 4px;
     overflow: hidden;
     background: {theme['bar_bg']};
@@ -595,7 +602,7 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
     align-items: center;
     justify-content: center;
     gap: 6px 16px;
-    margin-top: 6px;
+    margin-top: 8px;
     font-size: 11px;
     color: {theme['task_legend_dim']};
   }}
@@ -607,11 +614,11 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
   /* calendar */
   .calendar-panel {{ flex: 1; }}
   .cal-header {{ display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3px; }}
-  .cal-date {{ font-size: 12px; }}
+  .cal-date {{ font-size: 14px; color: {theme['cal_head_color']}; }}
   .cal-grid {{
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 1px;
+    gap: 2px;
   }}
   .cal-grid.wk {{ margin-bottom: 1px; }}
   .wk span {{
@@ -620,7 +627,7 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
     color: {theme['cal_head_color']};
   }}
   .cell {{
-    height: 14px;
+    height: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -633,7 +640,7 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
     display: flex;
     justify-content: center;
     gap: 14px;
-    margin-top: 3px;
+    margin-top: -1px;
     font-size: 11px;
   }}
   .cal-legend span {{ display: flex; align-items: center; gap: 5px; }}
@@ -649,7 +656,7 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>个人仪表盘 800x400</title>
+<title>个人仪表盘 800x480</title>
 <style>{css}</style>
 </head>
 <body>
@@ -665,7 +672,7 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
     <div class="content">
     <div class="col-left">
       <div class="panel gauge-panel" style="flex:1;">
-        <div class="panel-title" style="font-size:17px;">2026年目标</div>
+        <div class="panel-title" style="font-size:19px;">2026年目标</div>
         <div class="gauge-wrap">
           {gauge}
         </div>

@@ -360,6 +360,17 @@ def get_tasks_info(target_date):
     return {"tasks": tasks}
 
 
+def get_slogan_info():
+    """读取 data/slogan.csv 中的口号，文件缺失或内容为空时回退默认口号。"""
+    default_slogan = "日日精进 · 知行合一"
+    rows = read_csv_dicts(os.path.join(DATA_DIR, "slogan.csv"))
+    for r in rows:
+        text = (r.get("slogan") or "").strip()
+        if text:
+            return text
+    return default_slogan
+
+
 # ----------------------------------------------------------------------------
 # 三环同心仪表盘（单个 SVG，对齐模板结构）
 # ----------------------------------------------------------------------------
@@ -493,8 +504,10 @@ def build_calendar(fitness_rows, target_date, theme):
 # HTML 拼装
 # ----------------------------------------------------------------------------
 def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
-               target_date, weather_info, style=DEFAULT_STYLE):
+               target_date, weather_info, style=DEFAULT_STYLE, slogan=None):
     theme = THEMES.get(style, THEMES[DEFAULT_STYLE])
+    if slogan is None:
+        slogan = get_slogan_info()
     d = datetime.strptime(target_date, "%Y-%m-%d")
     weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
     date_str = f"{d.year}年{d.month}月{d.day}日 {weekdays[d.weekday() + 1]}"
@@ -566,7 +579,7 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
   /* gauge */
   .gauge-panel {{ align-items: center; }}
   .gauge-wrap {{ margin: 4px 0 4px; }}
-  .legend {{ width: 100%; display: flex; flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 6px 16px; }}
+  .legend {{ width: 100%; display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-start; gap: 6px 16px; }}
   .legend-row {{
     display: flex;
     align-items: center;
@@ -663,7 +676,7 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
   <div class="dash">
     <div class="topbar">
       <div class="tb-date" id="tbDate">{date_str}</div>
-      <div class="tb-slogan">日日精进 · 知行合一</div>
+      <div class="tb-slogan">{slogan}</div>
       <div class="tb-weather">
         {weather['icon']}
         <span>{weather['text']}</span>
@@ -711,8 +724,9 @@ def generate(target_date=None, open_browser=False, style=DEFAULT_STYLE, out_file
     tasks_info = get_tasks_info(target_date)
     fitness_rows = read_csv_dicts(os.path.join(DATA_DIR, "fitness.csv"))
     weather_info = fetch_weather("Beijing")
+    slogan = get_slogan_info()
     html = build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
-                      target_date, weather_info, style)
+                      target_date, weather_info, style, slogan)
     target_path = out_file or OUT_HTML
     with open(target_path, "w", encoding="utf-8") as f:
         f.write(html)

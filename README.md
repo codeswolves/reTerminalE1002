@@ -1,6 +1,6 @@
 # reTerminal E-Ink Dashboard
 
-一个为 [Seeed Studio reTerminal](https://wiki.seeedstudio.com/reTerminal/) + E1002 5" 墨水屏设计的个人仪表盘生成器。读取 CSV 数据源，生成 800x400 的 HTML 看板，可截图后推送到墨水屏显示。
+一个为 [Seeed Studio reTerminal](https://wiki.seeedstudio.com/reTerminal/) + E1002 5" 墨水屏设计的个人仪表盘生成器。读取 CSV 数据源，生成 800x480 的 HTML 看板，可截图后推送到墨水屏显示。
 
 ## 功能概览
 
@@ -89,11 +89,14 @@ python display_on_eink.py --clear
 ### 5. 一键流水线
 
 ```bash
-# 完整流程：生成 HTML → 截图 PNG → 推送墨水屏
+# 默认流程：生成 HTML → 截图 PNG（不推送墨水屏）
 python run_daily.py
 
-# 只生成 HTML + PNG，不推送墨水屏
-python run_daily.py --no-display
+# 指定主题风格（默认 light）
+python run_daily.py --style cyberpunk
+
+# 完整流程：生成 HTML → 截图 PNG → 推送墨水屏（需在 reTerminal 上运行）
+python run_daily.py --display
 
 # 只生成 HTML，不截图不显示
 python run_daily.py --no-screenshot
@@ -128,7 +131,7 @@ python generate_dashboard.py --all
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
 | `--date YYYY-MM-DD` | 目标日期 | 今天 |
-| `--style <名称>` | 主题风格 | `default` |
+| `--style <名称>` | 主题风格 | `light` |
 | `--all` | 循环生成所有主题到独立文件 | 关闭 |
 | `--open` | 生成后打开浏览器预览 | 关闭 |
 
@@ -154,8 +157,9 @@ python generate_dashboard.py --all
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
 | `--date YYYY-MM-DD` | 目标日期 | 今天 |
+| `--style <名称>` | 主题风格（9 套可选） | `light` |
 | `--no-screenshot` | 跳过 PNG 截图步骤 | 关闭 |
-| `--no-display` | 跳过墨水屏显示步骤 | 关闭 |
+| `--display` | 推送到墨水屏（需 reTerminal 设备） | 关闭 |
 
 ## 数据源格式
 
@@ -259,7 +263,7 @@ python -m http.server 8080
 ## 技术细节
 
 - **HTML 生成**：Python f-string 拼接，CSS 变量化主题系统（`THEMES` 字典）
-- **天气获取**：[wttr.in](https://wttr.in) 免费 API（`?format=j1`），英文描述 → 中文映射 + SVG 图标
+- **天气获取**：[open-meteo.com](https://open-meteo.com) 免费 API（`/v1/forecast?current=temperature_2m,weather_code`），WMO 天气码 → 中文描述 + SVG 图标，北京固定经纬度（39.9042, 116.4074），8 秒超时，失败时静默降级（不阻塞生成）
 - **三环 SVG**：`viewBox 0 0 210 210`，`r=92/58/24`，`stroke-width=20`，`rotate(-120 105 105)`
 - **任务双段条**：每条任务一个 `.bar` 内含两段 `.seg`（昨天实色 + 今天半透明），合计宽度 = 任务总进度
 - **月历**：周一起算，`.cell` 高 14px / 字号 10px，今天黄色高亮，已打卡绿色

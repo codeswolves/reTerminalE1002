@@ -361,7 +361,12 @@ def get_tasks_info(target_date):
 
 
 def get_slogan_info():
-    """读取 data/slogan.csv 中的口号，文件缺失或内容为空时回退默认口号。"""
+    """读取 data/slogan.csv 中的口号。
+
+    约定：slogan.csv 为历史记录格式，最新口号放在第一行（表头下），
+    旧的依次下移、不删除。本函数取第一个非空行作为当前口号，
+    文件缺失或内容为空时回退默认口号。
+    """
     default_slogan = "日日精进 · 知行合一"
     rows = read_csv_dicts(os.path.join(DATA_DIR, "slogan.csv"))
     for r in rows:

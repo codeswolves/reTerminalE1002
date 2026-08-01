@@ -304,6 +304,18 @@ def read_csv_dicts(path):
         return list(csv.DictReader(f))
 
 
+def _norm_date(s):
+    """日期归一化: 兼容 2026/8/2、2026-08-01 等格式 -> 2026-08-02"""
+    s = (s or "").strip().replace("/", "-")
+    parts = s.split("-")
+    if len(parts) == 3:
+        try:
+            return f"{int(parts[0]):04d}-{int(parts[1]):02d}-{int(parts[2]):02d}"
+        except ValueError:
+            pass
+    return s
+
+
 def get_weight_info(target_date):
     rows = read_csv_dicts(os.path.join(DATA_DIR, "weight.csv"))
     if not rows:
@@ -333,7 +345,7 @@ def get_goals_info():
 
 def get_fitness_info(target_date):
     rows = read_csv_dicts(os.path.join(DATA_DIR, "fitness.csv"))
-    row = next((r for r in rows if r["date"] == target_date), None)
+    row = next((r for r in rows if _norm_date(r.get("date")) == target_date), None)
     if not row:
         rows.sort(key=lambda r: r["date"])
         row = rows[-1] if rows else {"checkin": "0", "content": "", "yesterday": "0", "today": "0"}
@@ -348,7 +360,13 @@ def get_fitness_info(target_date):
 
 def get_tasks_info(target_date):
     rows = read_csv_dicts(os.path.join(DATA_DIR, "tasks.csv"))
-    rows = [r for r in rows if r.get("date") == target_date]
+    # 过滤空行, 按日期取最新一组任务 (兼容每天快照多组的情况)
+    rows = [r for r in rows if (r.get("task_name") or "").strip()]
+    if not rows:
+        return {"tasks": []}
+    rows.sort(key=lambda r: _norm_date(r.get("date")))
+    latest = _norm_date(rows[-1].get("date"))
+    rows = [r for r in rows if _norm_date(r.get("date")) == latest]
     tasks = []
     for r in rows:
         try:
@@ -363,17 +381,18 @@ def get_tasks_info(target_date):
 def get_slogan_info():
     """读取 data/slogan.csv 中的口号。
 
-    约定：slogan.csv 为历史记录格式，最新口号放在第一行（表头下），
-    旧的依次下移、不删除。本函数取第一个非空行作为当前口号，
+    约定：slogan.csv 为历史记录格式，最新口号追加在文件末尾，
+    本函数取最后一个非空行作为当前口号，
     文件缺失或内容为空时回退默认口号。
     """
     default_slogan = "日日精进 · 知行合一"
     rows = read_csv_dicts(os.path.join(DATA_DIR, "slogan.csv"))
+    last_text = ""
     for r in rows:
         text = (r.get("slogan") or "").strip()
         if text:
-            return text
-    return default_slogan
+            last_text = text
+    return last_text or default_slogan
 
 
 # ----------------------------------------------------------------------------
@@ -514,8 +533,8 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
     if slogan is None:
         slogan = get_slogan_info()
     d = datetime.strptime(target_date, "%Y-%m-%d")
-    weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
-    date_str = f"{d.year}年{d.month}月{d.day}日 {weekdays[d.weekday() + 1]}"
+    weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    date_str = f"{d.year}年{d.month}月{d.day}日 {weekdays[d.weekday()]}"
     weather = weather_info or {"text": "北京 --°C 未知", "icon": SVG_ICONS["cloud"]}
 
     css = f'''

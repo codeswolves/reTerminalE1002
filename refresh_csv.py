@@ -27,6 +27,12 @@ CSV_FILES = [
 ]
 
 
+def _warn_skipped(skipped):
+    """提示被跳过的异常行(行号列表)。"""
+    if skipped:
+        print(f"[警告] 第 {', '.join(map(str, skipped))} 行格式异常(列数不符), 已跳过未更新")
+
+
 def refresh_one(csv_name: str, value: str | None = None) -> None:
     """刷新单个 CSV 文件。在此编写具体更新逻辑。"""
     path = DATA_DIR / csv_name
@@ -87,32 +93,50 @@ def refresh_one(csv_name: str, value: str | None = None) -> None:
         print(f"[完成] 已打卡: {path} -> {new_row.strip()}")
         return
 
-    # --- tasks.csv: 两种模式 ---
-    #   模式1: tasks 3            -> 所有任务 progress +3
-    #   模式2: tasks 任务名 100    -> 指定任务 progress 设为 100
+    # --- tasks.csv: 两种模式 (新格式: date,task_name,yesterday progress,today progress,priority,finished) ---
+    #   模式1: tasks 3            -> 所有任务 today progress +3 (yesterday 记录旧 today)
+    #   模式2: tasks 任务名 100    -> 指定任务 today progress 设为 100 (yesterday 记录旧 today)
+    #   规则: today progress >= 100 时 finished 置为 yes
     if csv_name == "tasks.csv":
-        # 模式2: 按任务名设值
-        if isinstance(value, list):
+        def _apply(lines, matcher=None, set_today=None, delta=None):
+            changed, skipped = [], []
+            for i, line in enumerate(lines[1:], start=1):  # 跳过表头
+                parts = line.rstrip("\n").split(",")
+                if len(parts) != 6:  # 新格式固定 6 列
+                    if line.strip():
+                        skipped.append(i + 1)
+                    continue
+                if matcher is not None and parts[1].strip() != matcher:
+                    continue
+                try:
+                    old_today = int(parts[3])
+                except ValueError:
+                    continue
+                if old_today >= 100:
+                    continue  # 已完成任务保持不变, 避免溢出
+                parts[2] = str(old_today)                      # yesterday progress <- 旧 today
+                parts[3] = str(old_today + delta) if delta is not None else str(set_today)  # today progress <- 新值
+                if int(parts[3]) >= 100:
+                    parts[5] = "yes"
+                lines[i] = ",".join(parts) + "\n"
+                changed.append(parts)
+            return lines, changed, skipped
+
+        if isinstance(value, list):  # 模式2: 按任务名设值
             if len(value) != 2 or not value[1].lstrip("-").isdigit():
                 print(f"[提示] {csv_name} 按任务设置用法: python3 refresh_csv.py tasks 任务名 100")
                 return
-            task_name, new_progress = value[0], str(int(value[1]))
+            task_name, new_progress = value[0], int(value[1])
             with open(path, "r", newline="", encoding="utf-8") as f:
                 lines = f.readlines()
-            found = False
-            for i, line in enumerate(lines[1:], start=1):  # 跳过表头
-                parts = line.rstrip("\n").split(",")
-                if len(parts) >= 3 and parts[1].strip() == task_name:
-                    parts[2] = new_progress
-                    lines[i] = ",".join(parts) + "\n"
-                    found = True
-                    break
-            if not found:
+            lines, changed, skipped = _apply(lines, matcher=task_name, set_today=new_progress)
+            if not changed:
                 print(f"[跳过] 未找到任务: {task_name}")
                 return
             with open(path, "w", newline="", encoding="utf-8") as f:
                 f.writelines(lines)
-            print(f"[完成] 已设置进度: {task_name} -> {new_progress}")
+            print(f"[完成] 已设置进度: {task_name} -> {new_progress} (yesterday 记录旧值 {int(changed[0][2])})")
+            _warn_skipped(skipped)
             return
         # 模式1: 全部 +x
         if value is None or not value.lstrip("-").isdigit():
@@ -121,21 +145,16 @@ def refresh_one(csv_name: str, value: str | None = None) -> None:
         delta = int(value)
         with open(path, "r", newline="", encoding="utf-8") as f:
             lines = f.readlines()
-        changed = []
-        for i, line in enumerate(lines[1:], start=1):  # 跳过表头
-            parts = line.rstrip("\n").split(",")
-            if len(parts) >= 3 and parts[2].strip().isdigit():
-                parts[2] = str(int(parts[2]) + delta)
-                lines[i] = ",".join(parts) + "\n"
-                changed.append(parts)
+        lines, changed, skipped = _apply(lines, delta=delta)
         with open(path, "w", newline="", encoding="utf-8") as f:
             f.writelines(lines)
         if changed:
-            print(f"[完成] 进度已更新: {path} (增量 {delta:+d})")
+            print(f"[完成] 进度已更新: {path} (增量 {delta:+d}, yesterday 已刷新)")
             for parts in changed:
-                print(f"    {parts[1]}: {int(parts[2]) - delta} -> {parts[2]}")
+                print(f"    {parts[1]}: today {parts[2]} -> {parts[3]} (finished={parts[5]})")
         else:
             print(f"[跳过] {csv_name} 中没有可更新的进度行")
+        _warn_skipped(skipped)
         return
 
     # --- slogan.csv: 直接追加一行新口号 (单列) ---

@@ -1,12 +1,12 @@
 ﻿date,task_name,yesterday progress,today progress,priority,finished
 2026-08-01,完成进度看板项目,70,100,high,yes
-2026-08-01,完成华为与hg仿真,44,44,high,no
-2026-08-01,完成网络测量标准提纲,24,24,high,no
-2026-08-03,完成AI综述论文编写,,10,10,medium,no
-2026-08-03,完成仿真论文编写,5,5,medium,no
-2026-08-03,完成测量专利编写,5,5,high,no
-2026-08-03,完成调优专利编写,1,1,low,no
-2026-08-03,完成AI跟踪SIGCOMM,5,5,medium,no
-2026-08-03,完成电脑文件整理,30,30,medium,no
-2026-08-03,完成汽车保险购买,5,5,medium,no
-2026-08-03,搭建个人知识库(workbuddy/llm-wiki/obsidian),0,0,low,no
+2026-08-01,完成华为与hg仿真,44,46,high,no
+2026-08-01,完成网络测量标准提纲,26,100,high,yes
+2026-08-03,完成AI综述论文编写,10,10,medium,no
+2026-08-03,完成仿真论文编写,5,7,medium,no
+2026-08-03,完成测量专利编写,5,7,high,no
+2026-08-03,完成调优专利编写,1,3,low,no
+2026-08-03,完成AI跟踪SIGCOMM,5,7,medium,no
+2026-08-03,完成电脑文件整理,30,32,medium,no
+2026-08-03,完成汽车保险购买,5,7,medium,no
+2026-08-03,搭建个人知识库(workbuddy/llm-wiki/obsidian),0,2,low,no

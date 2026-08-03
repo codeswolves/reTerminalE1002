@@ -2,6 +2,8 @@
 
 一个为 [Seeed Studio reTerminal](https://wiki.seeedstudio.com/reTerminal/) + E1002 5" 墨水屏设计的个人仪表盘生成器。读取 CSV 数据源，生成 800x480 的 HTML 看板，可截图后推送到墨水屏显示。
 
+**在线预览**：[codeswolves.github.io/reTerminalE1002](https://codeswolves.github.io/reTerminalE1002/output/dashboard.html)
+
 ## 功能概览
 
 - **三环目标仪表盘**：减重、论文、专利三环同心进度环

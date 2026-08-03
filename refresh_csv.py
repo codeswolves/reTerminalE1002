@@ -57,7 +57,7 @@ def refresh_one(csv_name: str, value: str | None = None) -> None:
         print(f"[完成] 已追加: {path} -> {date_str},{value}")
         return
 
-    # --- fitness.csv: 填入第一个空行 (date,checkin,content,yesterday,today) ---
+    # --- fitness.csv: 今日记录覆盖更新, 无记录则填入第一个空行 (date,checkin,content,yesterday,today) ---
     if csv_name == "fitness.csv":
         if value is None:
             print(f"[提示] {csv_name} 需要打卡内容, 用法: python3 refresh_csv.py fitness 跑步一公里")
@@ -67,12 +67,15 @@ def refresh_one(csv_name: str, value: str | None = None) -> None:
         new_row = f"{date_str},1,{value},1,1\n"
         with open(path, "r", newline="", encoding="utf-8") as f:
             lines = f.readlines()
-        # 防重复: 今天已有记录则跳过
-        for line in lines:
+        # 今天已有记录 -> 覆盖更新 content
+        for i, line in enumerate(lines):
             if line.startswith(date_str + ","):
-                print(f"[跳过] 今天({date_str})已有记录, 避免重复追加: {line.strip()}")
+                lines[i] = new_row
+                with open(path, "w", newline="", encoding="utf-8") as f:
+                    f.writelines(lines)
+                print(f"[完成] 已更新今日打卡: {path} -> {new_row.strip()} (原: {line.strip()})")
                 return
-        # 找第一个空行填入, 没有空行则追加到末尾
+        # 无今日记录 -> 找第一个空行填入, 没有空行则追加到末尾
         for i, line in enumerate(lines):
             if line.strip().strip(",").strip() == "":
                 lines[i] = new_row
@@ -84,10 +87,36 @@ def refresh_one(csv_name: str, value: str | None = None) -> None:
         print(f"[完成] 已打卡: {path} -> {new_row.strip()}")
         return
 
-    # --- tasks.csv: 所有任务 progress 加 x (x 由命令行传入, 不写死) ---
+    # --- tasks.csv: 两种模式 ---
+    #   模式1: tasks 3            -> 所有任务 progress +3
+    #   模式2: tasks 任务名 100    -> 指定任务 progress 设为 100
     if csv_name == "tasks.csv":
+        # 模式2: 按任务名设值
+        if isinstance(value, list):
+            if len(value) != 2 or not value[1].lstrip("-").isdigit():
+                print(f"[提示] {csv_name} 按任务设置用法: python3 refresh_csv.py tasks 任务名 100")
+                return
+            task_name, new_progress = value[0], str(int(value[1]))
+            with open(path, "r", newline="", encoding="utf-8") as f:
+                lines = f.readlines()
+            found = False
+            for i, line in enumerate(lines[1:], start=1):  # 跳过表头
+                parts = line.rstrip("\n").split(",")
+                if len(parts) >= 3 and parts[1].strip() == task_name:
+                    parts[2] = new_progress
+                    lines[i] = ",".join(parts) + "\n"
+                    found = True
+                    break
+            if not found:
+                print(f"[跳过] 未找到任务: {task_name}")
+                return
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                f.writelines(lines)
+            print(f"[完成] 已设置进度: {task_name} -> {new_progress}")
+            return
+        # 模式1: 全部 +x
         if value is None or not value.lstrip("-").isdigit():
-            print(f"[提示] {csv_name} 需要增量数值, 用法: python3 refresh_csv.py tasks 3 (对所有任务 progress +3)")
+            print(f"[提示] {csv_name} 用法: ① python3 refresh_csv.py tasks 3 (全部+x)  ② python3 refresh_csv.py tasks 任务名 100 (指定任务设值)")
             return
         delta = int(value)
         with open(path, "r", newline="", encoding="utf-8") as f:
@@ -167,12 +196,17 @@ def main() -> None:
         return
     value = None
     names = []
+    extras = []
     base_names = [f[:-4] for f in CSV_FILES]
     for a in args:
         if a.endswith(".csv") or a in base_names:
             names.append(a)
         else:
-            value = a
+            extras.append(a)
+    if len(extras) == 1:
+        value = extras[0]
+    elif len(extras) > 1:
+        value = extras  # 多参数(如 tasks 任务名 100)以列表传给处理函数
     for n in names:
         refresh_one(n if n.endswith(".csv") else n + ".csv", value)
 

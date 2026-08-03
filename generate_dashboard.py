@@ -372,12 +372,12 @@ def get_tasks_info(target_date):
             pass
     if not rows:
         return {"tasks": [], "completed_count": 0}
-    # 按任务名去重，保留最新日期记录
+    # 按任务编号去重，保留最新日期记录
     task_map = {}
     for r in rows:
-        name = r.get("task_name", "").strip()
+        no = r.get("No.", "").strip()
         d = _norm_date(r.get("date"))
-        if name not in task_map or d > task_map[name][1]:
+        if no not in task_map or d > task_map[no][1]:
             try:
                 yp = int(float(r.get("yesterday progress", "0")))
             except ValueError:
@@ -386,7 +386,7 @@ def get_tasks_info(target_date):
                 tp = int(float(r.get("today progress", "0")))
             except ValueError:
                 tp = 0
-            task_map[name] = (r, d, yp, tp)
+            task_map[no] = (r, d, yp, tp)
     tasks = []
     for r, _, yp, tp in task_map.values():
         if r.get("finished", "").strip().lower() == "yes":

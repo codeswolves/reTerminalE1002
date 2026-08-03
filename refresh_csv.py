@@ -34,7 +34,7 @@ def refresh_one(csv_name: str, value: str | None = None) -> None:
         print(f"[跳过] 文件不存在: {path}")
         return
 
-    # --- weight.csv: 直接追加一行 (date,weight) ---
+    # --- weight.csv: 今日记录覆盖更新, 无记录则追加 (date,weight) ---
     if csv_name == "weight.csv":
         if value is None:
             print(f"[提示] {csv_name} 需要体重数值, 用法: python3 refresh_csv.py weight 90.5")
@@ -43,11 +43,15 @@ def refresh_one(csv_name: str, value: str | None = None) -> None:
         date_str = f"{today.year}/{today.month}/{today.day}"  # 与现有格式一致, 不带前导零
         with open(path, "r", newline="", encoding="utf-8") as f:
             lines = f.readlines()
-        # 防重复: 今天已有记录则跳过
-        for line in lines:
+        # 今天已有记录 -> 覆盖更新
+        for i, line in enumerate(lines):
             if line.startswith(date_str + ","):
-                print(f"[跳过] 今天({date_str})已有记录, 避免重复追加: {line.strip()}")
+                lines[i] = f"{date_str},{value}\n"
+                with open(path, "w", newline="", encoding="utf-8") as f:
+                    f.writelines(lines)
+                print(f"[完成] 已更新今日记录: {path} -> {date_str},{value} (原: {line.strip()})")
                 return
+        # 无今日记录 -> 追加
         with open(path, "a", newline="", encoding="utf-8") as f:
             f.write(f"{date_str},{value}\n")
         print(f"[完成] 已追加: {path} -> {date_str},{value}")

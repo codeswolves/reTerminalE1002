@@ -126,6 +126,7 @@ def display_via_simple(image_path):
     fb_path = "/dev/fb0"
     if Path(fb_path).exists():
         with open(bmp_path, "rb") as src, open(fb_path, "wb") as dst:
+            src.seek(54)  # 跳过 BMP 文件头（54 字节），只写入像素数据
             dst.write(src.read())
         print(f"[OK] BMP写入framebuffer: {image_path}")
         return True

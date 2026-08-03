@@ -121,7 +121,7 @@ def _apply_tasks_progress(lines, matcher=None, delta=None, set_today=None):
         parts = line.rstrip("\n").split(",")
         if len(parts) != TASKS_COL_COUNT:
             if line.strip():
-                skipped.append(i + 1)
+                skipped.append(i + 2)  # i=1 是 lines[1]（文件第2行），需+2得实际行号
             continue
         if matcher is not None and parts[0].strip() != matcher:
             continue

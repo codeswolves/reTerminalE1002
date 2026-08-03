@@ -1,7 +1,7 @@
 """
 generate_dashboard.py
 生成 reTerminal 用的 800x480 仪表盘 HTML。
-结构完全对齐 E:\WorkBuddy\design\dashboard.html 模板。
+结构完全对齐 E:/WorkBuddy/design/dashboard.html 模板。
 支持多主题换肤 (--style)。
 """
 
@@ -320,7 +320,7 @@ def get_weight_info(target_date):
     rows = read_csv_dicts(os.path.join(DATA_DIR, "weight.csv"))
     if not rows:
         return {"percent": 0, "label": "减重40斤"}
-    rows.sort(key=lambda r: r["date"])
+    rows.sort(key=lambda r: _norm_date(r.get("date")))
     start = float(rows[0]["weight"])
     current = float(rows[-1]["weight"])
     target_loss = 40.0  # 减重 40 斤 = 20kg
@@ -347,7 +347,7 @@ def get_fitness_info(target_date):
     rows = read_csv_dicts(os.path.join(DATA_DIR, "fitness.csv"))
     row = next((r for r in rows if _norm_date(r.get("date")) == target_date), None)
     if not row:
-        rows.sort(key=lambda r: r["date"])
+        rows.sort(key=lambda r: _norm_date(r.get("date")))
         row = rows[-1] if rows else {"checkin": "0", "content": "", "yesterday": "0", "today": "0"}
     return {
         "checkin": row.get("checkin", "0") == "1",
@@ -464,7 +464,7 @@ def build_legend(weight_info, goals, theme):
 # ----------------------------------------------------------------------------
 # 任务面板（双段进度条，对齐模板结构）
 # ----------------------------------------------------------------------------
-def build_tasks_panel(tasks_info, fitness_info, theme):
+def build_tasks_panel(tasks_info, theme):
     """模板结构：每个 task 一个 .task > .task-head(名称+总%) + .bar(seg昨天+seg今天)"""
     # 全年完成计数
     completed_count = tasks_info.get("completed_count", 0)
@@ -515,7 +515,7 @@ def build_calendar(fitness_rows, target_date, theme):
         ndays = (date(year + 1, 1, 1) - first).days
     else:
         ndays = (date(year, month + 1, 1) - first).days
-    checked = {r["date"]: r.get("checkin", "0") == "1" for r in fitness_rows}
+    checked = {_norm_date(r["date"]): r.get("checkin", "0") == "1" for r in fitness_rows}
 
     head = "".join(f'<span>{"一二三四五六日"[i]}</span>' for i in range(7))
     cells = ['<span class="cell empty"></span>' for _ in range(start_weekday)]
@@ -721,7 +721,7 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
 
     gauge = build_gauge_svg(weight_info, goals, theme)
     legend = build_legend(weight_info, goals, theme)
-    tasks_html = build_tasks_panel(tasks_info, fitness_info, theme)
+    tasks_html = build_tasks_panel(tasks_info, theme)
     cal_html = build_calendar(fitness_rows, target_date, theme)
 
     html = f'''<!DOCTYPE html>
@@ -807,7 +807,8 @@ def generate_all(target_date=None):
         generate(target_date, False, style, p)
         paths.append(p)
     # 同时生成默认名 dashboard.html
-    generate(target_date, False, DEFAULT_STYLE)
+    default_path = generate(target_date, False, DEFAULT_STYLE)
+    paths.append(default_path)
     return paths
 
 

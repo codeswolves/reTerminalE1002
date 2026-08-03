@@ -116,7 +116,7 @@ def run(date=None, do_screenshot=True, do_display=False, style=None):
         ("渲染截图", lambda: step_screenshot()) if do_screenshot else (None, None),
         # 墨水屏推送默认关闭：需在 reTerminal 设备上运行且 IT8951 驱动已加载
         # 如需启用，命令行加 --display 参数
-        # ("墨水屏显示", lambda: step_display()) if do_display else (None, None),
+        ("墨水屏显示", lambda: step_display()) if do_display else (None, None),
     ]
 
     success_count = 0

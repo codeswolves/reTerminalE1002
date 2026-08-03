@@ -360,22 +360,41 @@ def get_fitness_info(target_date):
 
 def get_tasks_info(target_date):
     rows = read_csv_dicts(os.path.join(DATA_DIR, "tasks.csv"))
-    # 过滤空行, 按日期取最新一组任务 (兼容每天快照多组的情况)
+    # 过滤空行
     rows = [r for r in rows if (r.get("task_name") or "").strip()]
-    if not rows:
-        return {"tasks": []}
-    rows.sort(key=lambda r: _norm_date(r.get("date")))
-    latest = _norm_date(rows[-1].get("date"))
-    rows = [r for r in rows if _norm_date(r.get("date")) == latest]
-    tasks = []
+    # 统计全年完成数量（所有日期，today progress 为 100% 的任务）
+    completed_count = 0
     for r in rows:
         try:
-            p = int(float(r.get("progress", "0")))
+            if int(float(r.get("today progress", "0"))) == 100:
+                completed_count += 1
         except ValueError:
-            p = 0
-        tasks.append({"name": r.get("task_name", ""), "progress": p,
+            pass
+    if not rows:
+        return {"tasks": [], "completed_count": 0}
+    # 按任务名去重，保留最新日期记录
+    task_map = {}
+    for r in rows:
+        name = r.get("task_name", "").strip()
+        d = _norm_date(r.get("date"))
+        if name not in task_map or d > task_map[name][1]:
+            try:
+                yp = int(float(r.get("yesterday progress", "0")))
+            except ValueError:
+                yp = 0
+            try:
+                tp = int(float(r.get("today progress", "0")))
+            except ValueError:
+                tp = 0
+            task_map[name] = (r, d, yp, tp)
+    tasks = []
+    for r, _, yp, tp in task_map.values():
+        if r.get("finished", "").strip().lower() == "yes":
+            continue
+        tasks.append({"name": r.get("task_name", ""), "progress": tp,
+                      "yesterday_progress": yp, "today_progress": tp,
                       "priority": r.get("priority", "medium")})
-    return {"tasks": tasks}
+    return {"tasks": tasks, "completed_count": completed_count}
 
 
 def get_slogan_info():
@@ -447,19 +466,18 @@ def build_legend(weight_info, goals, theme):
 # ----------------------------------------------------------------------------
 def build_tasks_panel(tasks_info, fitness_info, theme):
     """模板结构：每个 task 一个 .task > .task-head(名称+总%) + .bar(seg昨天+seg今天)"""
-    # 取前3条任务
-    tasks = tasks_info["tasks"][:3]
-    # 周一数据：用 fitness.csv 的 yesterday/today 作为全局"昨天完成/今天推进"百分比
-    y_pct = max(0, min(100, int(fitness_info["yesterday"] * 100)))
-    t_pct = max(0, min(100, int(fitness_info["today"] * 100)))
-
+    # 全年完成计数
+    completed_count = tasks_info.get("completed_count", 0)
+    # 按优先级排序后取前3条：high > medium > low
+    prio_order = {"high": 0, "medium": 1, "low": 2}
+    tasks = sorted(tasks_info["tasks"], key=lambda t: prio_order.get(t.get("priority", "medium"), 1))
+    tasks = tasks[:3]
     task_html = ""
     for i, task in enumerate(tasks):
         solid, half = theme["task_colors"][i % len(theme["task_colors"])]
         total = task["progress"]
-        # 昨天 seg = 任务总进度的 60%，今天 seg = 40%（模拟模板：双段合起来=总进度）
-        y_seg = total * 0.6
-        t_seg = total * 0.4
+        y_seg = task["yesterday_progress"]
+        t_seg = max(0, task["today_progress"] - task["yesterday_progress"])
         task_html += f'''<div class="task">
           <div class="task-head"><span style="color:{theme["task_name_color"]}">{task["name"]}</span><span class="task-val" style="color:{theme["task_val_color"]}">{total}%</span></div>
           <div class="bar">
@@ -479,7 +497,7 @@ def build_tasks_panel(tasks_info, fitness_info, theme):
       </div>'''
 
     return f'''<div class="panel tasks-panel">
-        <div class="panel-title" style="color:{theme["panel_title_color"]}">每日任务</div>
+        <div class="panel-title" style="color:{theme["panel_title_color"]}">每日任务<span class="task-done-count">累计完成  {completed_count}</span></div>
         {task_html}
         {legend}
       </div>'''
@@ -598,6 +616,9 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
     margin-bottom: 3px;
     letter-spacing: 0.5px;
     flex: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
   }}
 
   /* gauge */
@@ -618,6 +639,16 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
 
   /* tasks */
   .tasks-panel {{ flex: none; }}
+  .task-done-count {{
+    font-size: 11px;
+    font-weight: 600;
+    color: {theme['task_val_color']};
+    background: {theme['bar_bg']};
+    border-radius: 10px;
+    padding: 1px 8px;
+    line-height: 1.6;
+    flex: none;
+  }}
   .task {{ margin-bottom: 5px; }}
   .task:last-child {{ margin-bottom: 0; }}
   /*每日任务的字体在这里调整*/

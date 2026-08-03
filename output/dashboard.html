@@ -69,8 +69,10 @@
 
   /* gauge */
   .gauge-panel { align-items: center; }
-  .gauge-wrap { margin: 4px 0 4px; }
-  .legend { width: 100%; display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-start; gap: 6px 16px; }
+  /*调整3个圈的位置，10px上移，4px下移*/
+  .gauge-wrap { margin: 10px 0 4px; } 
+  /*2026年目标的图例位置调整，gap: 6px(行间距) 14px(三个图例之间的距离);*/
+  .legend { width: 100%; display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-start; gap: 6px 14px; margin-top: 8px; }
   .legend-row {
     display: flex;
     align-items: center;
@@ -85,10 +87,11 @@
   .tasks-panel { flex: none; }
   .task { margin-bottom: 5px; }
   .task:last-child { margin-bottom: 0; }
+  /*每日任务的字体在这里调整*/
   .task-head {
     display: flex;
     justify-content: space-between;
-    font-size: 12px;
+    font-size: 14px;
     margin-bottom: 4px;
   }
   .task-val { font-weight: 600; }
@@ -107,7 +110,7 @@
     justify-content: center;
     gap: 6px 16px;
     margin-top: 8px;
-    font-size: 11px;
+    font-size: 14px;
     color: #8893a7;
   }
   .task-legend .lbl { color: #3a4456; }
@@ -124,10 +127,11 @@
     grid-template-columns: repeat(7, 1fr);
     gap: 2px;
   }
+  /*日历的字体*/
   .cal-grid.wk { margin-bottom: 1px; }
   .wk span {
     text-align: center;
-    font-size: 11px;
+    font-size: 14px;
     color: #8893a7;
   }
   .cell {
@@ -135,17 +139,18 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 10px;
+    font-size: 14px;
     line-height: 1;
     border-radius: 4px;
   }
   .cell.empty { background: transparent; }
+  /*日历下面图例的字体*/
   .cal-legend {
     display: flex;
     justify-content: center;
     gap: 14px;
     margin-top: -1px;
-    font-size: 11px;
+    font-size: 14px;
   }
   .cal-legend span { display: flex; align-items: center; gap: 5px; }
   </style>
@@ -156,8 +161,8 @@
       <div class="tb-date" id="tbDate">2026年8月3日 周一</div>
       <div class="tb-slogan">千里之行，始于足下</div>
       <div class="tb-weather">
-        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8 a3 3 0 1 1 5.5 -1.5 h0.5 a2 2 0 1 1 0 4 H4 a2.5 2.5 0 0 1 0 -2.5z" fill="#9ca3af"/><g stroke="#60a5fa" stroke-width="1.2" stroke-linecap="round"><line x1="6" y1="12" x2="5.5" y2="14.5"/><line x1="9" y1="12" x2="8.5" y2="14.5"/><line x1="12" y1="12" x2="11.5" y2="14.5"/></g></svg>
-        <span>北京 26°C 毛毛雨</span>
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 11 a3 3 0 1 1 5.5 -1.5 h0.5 a2 2 0 1 1 0 4 H5 a2.5 2.5 0 0 1 0 -2.5z" fill="#9ca3af"/></svg>
+        <span>北京 33°C 多云</span>
       </div>
     </div>
     <div class="content">

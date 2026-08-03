@@ -602,8 +602,10 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
 
   /* gauge */
   .gauge-panel {{ align-items: center; }}
-  .gauge-wrap {{ margin: 4px 0 4px; }}
-  .legend {{ width: 100%; display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-start; gap: 6px 16px; }}
+  /*调整3个圈的位置，10px上移，4px下移*/
+  .gauge-wrap {{ margin: 10px 0 4px; }} 
+  /*2026年目标的图例位置调整，gap: 6px(行间距) 14px(三个图例之间的距离);*/
+  .legend {{ width: 100%; display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-start; gap: 6px 14px; margin-top: 8px; }}
   .legend-row {{
     display: flex;
     align-items: center;
@@ -618,10 +620,11 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
   .tasks-panel {{ flex: none; }}
   .task {{ margin-bottom: 5px; }}
   .task:last-child {{ margin-bottom: 0; }}
+  /*每日任务的字体在这里调整*/
   .task-head {{
     display: flex;
     justify-content: space-between;
-    font-size: 12px;
+    font-size: 14px;
     margin-bottom: 4px;
   }}
   .task-val {{ font-weight: 600; }}
@@ -640,7 +643,7 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
     justify-content: center;
     gap: 6px 16px;
     margin-top: 8px;
-    font-size: 11px;
+    font-size: 14px;
     color: {theme['task_legend_dim']};
   }}
   .task-legend .lbl {{ color: {theme['task_legend_lbl']}; }}
@@ -657,10 +660,11 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
     grid-template-columns: repeat(7, 1fr);
     gap: 2px;
   }}
+  /*日历的字体*/
   .cal-grid.wk {{ margin-bottom: 1px; }}
   .wk span {{
     text-align: center;
-    font-size: 11px;
+    font-size: 14px;
     color: {theme['cal_head_color']};
   }}
   .cell {{
@@ -668,17 +672,18 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 10px;
+    font-size: 14px;
     line-height: 1;
     border-radius: 4px;
   }}
   .cell.empty {{ background: transparent; }}
+  /*日历下面图例的字体*/
   .cal-legend {{
     display: flex;
     justify-content: center;
     gap: 14px;
     margin-top: -1px;
-    font-size: 11px;
+    font-size: 14px;
   }}
   .cal-legend span {{ display: flex; align-items: center; gap: 5px; }}
   '''

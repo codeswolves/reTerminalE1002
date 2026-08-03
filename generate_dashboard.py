@@ -366,9 +366,9 @@ def get_tasks_info(target_date):
     completed_count = 0
     for r in rows:
         try:
-            if int(float(r.get("today progress", "0"))) == 100:
+            if int(float(r.get("today progress") or 0)) == 100:
                 completed_count += 1
-        except ValueError:
+        except (ValueError, TypeError):
             pass
     if not rows:
         return {"tasks": [], "completed_count": 0}
@@ -379,17 +379,17 @@ def get_tasks_info(target_date):
         d = _norm_date(r.get("date"))
         if no not in task_map or d > task_map[no][1]:
             try:
-                yp = int(float(r.get("yesterday progress", "0")))
-            except ValueError:
+                yp = int(float(r.get("yesterday progress") or 0))
+            except (ValueError, TypeError):
                 yp = 0
             try:
-                tp = int(float(r.get("today progress", "0")))
-            except ValueError:
+                tp = int(float(r.get("today progress") or 0))
+            except (ValueError, TypeError):
                 tp = 0
             task_map[no] = (r, d, yp, tp)
     tasks = []
     for r, _, yp, tp in task_map.values():
-        if r.get("finished", "").strip().lower() == "yes":
+        if (r.get("finished") or "").strip().lower() == "yes":
             continue
         tasks.append({"name": r.get("task_name", ""), "progress": tp,
                       "yesterday_progress": yp, "today_progress": tp,

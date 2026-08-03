@@ -1,4 +1,4 @@
-r"""
+"""
 generate_dashboard.py
 生成 reTerminal 用的 800x480 仪表盘 HTML。
 结构完全对齐 E:\WorkBuddy\design\dashboard.html 模板。

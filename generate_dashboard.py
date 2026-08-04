@@ -636,7 +636,7 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
   /*调整3个圈的位置，10px上移，4px下移*/
   .gauge-wrap {{ margin: 10px 0 4px; }} 
   /*2026年目标的图例位置调整，gap: 6px(行间距) 14px(三个图例之间的距离);*/
-  .legend {{ width: 100%; display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-start; gap: 6px 14px; margin-top: 8px; }}
+  .legend {{ width: 100%; display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-start; gap: 6px 12px; margin-top: 8px; }}
   .legend-row {{
     display: flex;
     align-items: center;

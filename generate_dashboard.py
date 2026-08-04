@@ -516,6 +516,11 @@ def build_calendar(fitness_rows, target_date, theme):
     else:
         ndays = (date(year, month + 1, 1) - first).days
     checked = {_norm_date(r["date"]): r.get("checkin", "0") == "1" for r in fitness_rows}
+    # 累计打卡天数：初始值 + 截止今天（含）的打卡次数
+    INITIAL_CHECKIN = 8
+    month_checkins = sum(1 for dd, ok in checked.items() if ok and dd <= target_date)
+    total_checkins = INITIAL_CHECKIN + month_checkins
+
 
     head = "".join(f'<span>{"一二三四五六日"[i]}</span>' for i in range(7))
     cells = ['<span class="cell empty"></span>' for _ in range(start_weekday)]
@@ -531,6 +536,11 @@ def build_calendar(fitness_rows, target_date, theme):
     return f'''<div class="panel calendar-panel">
         <div class="cal-header">
           <span class="panel-title" style="margin:0;color:{theme["panel_title_color"]}">健身打卡</span>
+          <span class="cal-stats">
+            <span class="cal-stats-label">累计打卡</span>
+            <span class="cal-stats-num" style="color:{theme["panel_title_color"]}">{total_checkins}</span>
+            <span class="cal-stats-label">天</span>
+          </span>
           <span class="cal-date">{year} 年 {month:02d} 月</span>
         </div>
         <div class="cal-grid wk">{head}</div>
@@ -686,6 +696,21 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
   .calendar-panel {{ flex: 1; }}
   .cal-header {{ display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3px; }}
   .cal-date {{ font-size: 14px; color: {theme['cal_head_color']}; }}
+  .cal-stats {{
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    margin-left: 8px;
+  }}
+  .cal-stats-num {{
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+  }}
+  .cal-stats-label {{
+    font-size: 12px;
+    color: {theme['cal_head_color']};
+  }}
   .cal-grid {{
     display: grid;
     grid-template-columns: repeat(7, 1fr);

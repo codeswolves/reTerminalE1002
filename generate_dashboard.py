@@ -451,13 +451,13 @@ def build_gauge_svg(weight_info, goals, theme):
 
 def build_legend(weight_info, goals, theme):
     rows = [
-        (theme["ring1_color"], weight_info["label"], weight_info["percent"]),
-        (theme["ring2_color"], goals["paper"]["label"], goals["paper"]["percent"]),
-        (theme["ring3_color"], goals["patent"]["label"], goals["patent"]["percent"]),
+        (theme["ring1_color"], weight_info["label"]),
+        (theme["ring2_color"], goals["paper"]["label"]),
+        (theme["ring3_color"], goals["patent"]["label"]),
     ]
     items = ""
-    for color, name, pct in rows:
-        items += f'<div class="legend-row"><span class="dot" style="background:{color}"></span><span class="lg-name">{name}</span><span class="lg-pct" style="color:{color}">{pct}%</span></div>'
+    for color, name in rows:
+        items += f'<div class="legend-row"><span class="dot" style="background:{color}"></span><span class="lg-name">{name}</span></div>'
     return f'<div class="legend">{items}</div>'
 
 
@@ -636,16 +636,15 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
   /*调整3个圈的位置，10px上移，4px下移*/
   .gauge-wrap {{ margin: 10px 0 4px; }} 
   /*2026年目标的图例位置调整，gap: 6px(行间距) 14px(三个图例之间的距离);*/
-  .legend {{ width: 100%; display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-start; gap: 6px 12px; margin-top: 8px; }}
+  .legend {{ width: 100%; display: flex; flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 6px 12px; margin-top: 8px; }}
   .legend-row {{
     display: flex;
     align-items: center;
-    font-size: 12px;
+    font-size: 14px;
     line-height: 1.2;
   }}
   .dot {{ width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; flex: none; }}
   .lg-name {{ color: {theme['legend_name']}; flex: none; }}
-  .lg-pct {{ font-weight: 700; font-size: 14px; margin-left: 4px; }}
 
   /* tasks */
   .tasks-panel {{ flex: none; }}

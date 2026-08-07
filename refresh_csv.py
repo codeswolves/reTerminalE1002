@@ -14,6 +14,7 @@ refresh_csv.py — 每日刷新 CSV 进度数据
 """
 
 import csv
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -36,15 +37,32 @@ TASKS_COL_COUNT = 7
 # ---------- 通用工具 ----------
 
 def _today_str() -> str:
-    """返回今日日期字符串(与现有 CSV 格式一致, 不带前导零)。"""
+    """返回今日日期字符串(YYYY/MM/DD 带前导零, 避免表格软件打开时改写格式)。"""
     t = date.today()
-    return f"{t.year}/{t.month}/{t.day}"
+    return f"{t.year:04d}/{t.month:02d}/{t.day:02d}"
 
 
 def _warn_skipped(skipped):
     """提示被跳过的异常行(行号列表)。"""
     if skipped:
         print(f"[警告] 第 {', '.join(map(str, skipped))} 行格式异常(列数不符), 已跳过未更新")
+
+
+def _clean_csv_dates(path: Path) -> None:
+    """清洗表格软件产生的日期污染: 2026.0/8/1 -> 2026/08/01, 并统一为 YYYY/MM/DD。"""
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except Exception:
+        return
+    new_text = text.replace(".0/", "/")  # 剥掉表格软件加的 .0
+    new_text = re.sub(
+        r"(\d{4})/(\d{1,2})/(\d{1,2})",
+        lambda m: f"{int(m.group(1)):04d}/{int(m.group(2)):02d}/{int(m.group(3)):02d}",
+        new_text,
+    )
+    if new_text != text:
+        path.write_text(new_text, encoding="utf-8")
+        print(f"[清洗] {path.name}: 日期已统一为 YYYY/MM/DD 格式")
 
 
 def _upsert_today_line(path: Path, date_str: str, new_line: str,
@@ -279,6 +297,9 @@ def refresh_one(csv_name: str, value=None) -> None:
     if not path.exists():
         print(f"[跳过] 文件不存在: {path}")
         return
+
+    # 每次刷新前自动清洗日期格式(防表格软件污染)
+    _clean_csv_dates(path)
 
     handler = _REFRESHERS.get(csv_name)
     if handler is None:

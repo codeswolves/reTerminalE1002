@@ -12,6 +12,7 @@
 - **北京实时天气**：SVG 图标 + 中文描述 + 温度
 - **9 套主题风格**：一键换肤
 - **全流水线**：生成 HTML → 截图 PNG → 推送墨水屏
+- **任务清单可视化**：按完成状态/优先级一键筛选
 
 ## 项目结构
 
@@ -24,12 +25,16 @@ reTerminal/
 │   └── goals.csv            # 论文/专利目标进度
 ├── output/                  # 生成结果
 │   ├── dashboard.html       # 默认看板
-│   └── dashboard_<style>.html  # 各主题独立文件（--all 生成）
-├── generate_dashboard.py    # HTML 生成器（核心）
-├── render_screenshot.py     # HTML → PNG 截图工具
-├── display_on_eink.py       # PNG → 墨水屏显示工具
-├── run_daily.py             # 一键流水线（生成+截图+显示）
-├── setup_reterminal.sh      # reTerminal 设备端安装脚本
+│   ├── dashboard_<style>.html  # 各主题独立文件（--all 生成）
+│   └── tasks_view.html      # 任务清单可视化筛选页面
+├── src/                     # 全部代码
+│   ├── generate_dashboard.py    # HTML 生成器（核心）
+│   ├── generate_tasks_view.py   # 任务清单可视化筛选页生成器
+│   ├── render_screenshot.py     # HTML → PNG 截图工具
+│   ├── display_on_eink.py       # PNG → 墨水屏显示工具
+│   ├── run_daily.py             # 一键流水线（生成+截图+显示）
+│   ├── refresh_csv.py           # 每日刷新 CSV 进度数据
+│   └── setup_reterminal.sh      # reTerminal 设备端安装脚本
 └── requirements.txt
 ```
 
@@ -56,52 +61,64 @@ pip install Pillow
 
 ```bash
 # 生成默认风格（输出到 output/dashboard.html）
-python generate_dashboard.py
+python src/generate_dashboard.py
 
 # 指定日期
-python generate_dashboard.py --date 2026-08-01
+python src/generate_dashboard.py --date 2026-08-01
 
 # 生成后自动打开浏览器预览
-python generate_dashboard.py --open
+python src/generate_dashboard.py --open
 
 # 生成指定主题
-python generate_dashboard.py --style cyberpunk
+python src/generate_dashboard.py --style cyberpunk
 
 # 一次性生成所有 9 套主题到独立文件
-python generate_dashboard.py --all
+python src/generate_dashboard.py --all
 ```
 
-### 3. 截图为 PNG
+### 3. 生成任务清单可视化页
+
+```bash
+# 生成 output/tasks_view.html（数据内嵌，双击即用）
+python src/generate_tasks_view.py
+
+# 生成后自动打开浏览器
+python src/generate_tasks_view.py --open
+```
+
+页面顶部提供筛选按钮：全部 / 已完成任务 / 未完成任务 / 高优先级 / 中优先级 / 低优先级，点击即可筛选显示任务。
+
+### 4. 截图为 PNG
 
 ```bash
 # 将 output/dashboard.html 截图为 output/dashboard.png（800x480）
-python render_screenshot.py
+python src/render_screenshot.py
 ```
 
-### 4. 显示到墨水屏（仅 reTerminal 设备）
+### 5. 显示到墨水屏（仅 reTerminal 设备）
 
 ```bash
 # 将 output/dashboard.png 推送到墨水屏
-python display_on_eink.py
+python src/display_on_eink.py
 
 # 清屏（全白）
-python display_on_eink.py --clear
+python src/display_on_eink.py --clear
 ```
 
-### 5. 一键流水线
+### 6. 一键流水线
 
 ```bash
 # 默认流程：生成 HTML → 截图 PNG（不推送墨水屏）
-python run_daily.py
+python src/run_daily.py
 
 # 指定主题风格（默认 light）
-python run_daily.py --style cyberpunk
+python src/run_daily.py --style cyberpunk
 
 # 完整流程：生成 HTML → 截图 PNG → 推送墨水屏（需在 reTerminal 上运行）
-python run_daily.py --display
+python src/run_daily.py --display
 
 # 只生成 HTML，不截图不显示
-python run_daily.py --no-screenshot
+python src/run_daily.py --no-screenshot
 ```
 
 ## 主题风格
@@ -122,7 +139,7 @@ python run_daily.py --no-screenshot
 
 ```bash
 # 预览所有风格（生成独立文件后用浏览器打开）
-python generate_dashboard.py --all
+python src/generate_dashboard.py --all
 # 然后访问 output/dashboard_<style>.html
 ```
 
@@ -135,6 +152,12 @@ python generate_dashboard.py --all
 | `--date YYYY-MM-DD` | 目标日期 | 今天 |
 | `--style <名称>` | 主题风格 | `light` |
 | `--all` | 循环生成所有主题到独立文件 | 关闭 |
+| `--open` | 生成后打开浏览器预览 | 关闭 |
+
+### `generate_tasks_view.py`
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
 | `--open` | 生成后打开浏览器预览 | 关闭 |
 
 ### `render_screenshot.py`
@@ -175,7 +198,7 @@ date,weight
 2026-08-01,89.8
 ```
 
-减重目标默认为 **40 斤**（20kg），从首条记录的起始体重计算进度。修改 `generate_dashboard.py` 中 `get_weight_info` 的 `target_loss = 40.0` 可调整目标。
+减重目标默认为 **40 斤**（20kg），从首条记录的起始体重计算进度。修改 `src/generate_dashboard.py` 中 `get_weight_info` 的 `target_loss = 40.0` 可调整目标。
 
 ### `data/fitness.csv`
 
@@ -195,10 +218,17 @@ date,checkin,content,yesterday,today
 每日任务进度，最多展示 3 条。
 
 ```csv
-date,task_name,progress,priority
-2026-08-01,完成项目需求文档,100,high
-2026-08-01,前端页面开发,75,high
+No.,date,task_name,yesterday progress,today progress,priority,finished,completed date
+1,2026/08/01,完成进度看板项目,70,100,high,yes,2026/08/01
+2,2026/08/01,完成华为与hg仿真,49,46,high,no,
 ```
+
+- `No.`：任务编号（唯一，可视化页按此去重取最新记录）
+- `date`：创建日期（`YYYY/MM/DD`）
+- `yesterday progress` / `today progress`：昨天完成度 / 今天进度（0~100）
+- `priority`：`high` / `medium` / `low`
+- `finished`：`yes` / `no`
+- `completed date`：完成日期（`YYYY/MM/DD`，未完成留空）。用 `refresh_csv.py` 更新任务时，进度达到 100 会自动写入当天日期
 
 ### `data/goals.csv`
 
@@ -217,8 +247,8 @@ patent,3,1
 在 reTerminal 上执行：
 
 ```bash
-chmod +x setup_reterminal.sh
-./setup_reterminal.sh
+chmod +x src/setup_reterminal.sh
+./src/setup_reterminal.sh
 ```
 
 安装脚本会：
@@ -244,7 +274,7 @@ cat /tmp/dashboard_cron.log
 ```bash
 crontab -e
 # 改为每天早上 8:00
-0 8 * * * cd /home/pi/reTerminal && python3 run_daily.py >> /tmp/dashboard_cron.log 2>&1
+0 8 * * * cd /home/pi/reTerminal && python3 src/run_daily.py >> /tmp/dashboard_cron.log 2>&1
 ```
 
 ## 在开发机上预览

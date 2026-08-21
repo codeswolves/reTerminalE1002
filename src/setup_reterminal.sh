@@ -10,7 +10,8 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"  # src/ 目录
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"               # 项目根目录
 echo "╔══════════════════════════════════════════════════╗"
 echo "║   reTerminal E1002 看板 - 安装配置               ║"
 echo "╚══════════════════════════════════════════════════╝"
@@ -26,19 +27,19 @@ python3 -m playwright install chromium 2>/dev/null || echo "[WARN] Chromium 安�
 
 # 3. 创建数据目录
 echo "[3/4] 初始化数据目录..."
-mkdir -p "${SCRIPT_DIR}/data" "${SCRIPT_DIR}/output"
+mkdir -p "${PROJECT_ROOT}/data" "${PROJECT_ROOT}/output"
 
 # 创建示例 CSV（如果不存在）
 for f in weight.csv fitness.csv tasks.csv; do
-    if [ ! -f "${SCRIPT_DIR}/data/${f}" ]; then
-        touch "${SCRIPT_DIR}/data/${f}"
+    if [ ! -f "${PROJECT_ROOT}/data/${f}" ]; then
+        touch "${PROJECT_ROOT}/data/${f}"
         echo "[INFO] 已创建空文件: data/${f}"
     fi
 done
 
 # 4. 设置定时任务
 echo "[4/4] 设置每日自动刷新定时任务 (每天 07:00)..."
-CRON_JOB="0 7 * * * cd ${SCRIPT_DIR} && python3 run_daily.py >> /tmp/dashboard_cron.log 2>&1"
+CRON_JOB="0 7 * * * cd ${PROJECT_ROOT} && python3 src/run_daily.py >> /tmp/dashboard_cron.log 2>&1"
 
 # 检查是否已存在
 if crontab -l 2>/dev/null | grep -q "run_daily.py"; then
@@ -52,7 +53,7 @@ echo ""
 echo "╔══════════════════════════════════════════════════╗"
 echo "║  安装完成！                                      ║"
 echo "║                                                  ║"
-echo "║  手动运行: python3 run_daily.py                  ║"
+echo "║  手动运行: python3 src/run_daily.py              ║"
 echo "║  查看定时: crontab -l                            ║"
 echo "║  日志位置: /tmp/dashboard_cron.log               ║"
 echo "║                                                  ║"

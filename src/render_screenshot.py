@@ -22,7 +22,7 @@ import argparse
 import sys
 from pathlib import Path
 
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).resolve().parent.parent  # 项目根目录（src/ 的父目录）
 OUTPUT_DIR = BASE_DIR / "output"
 DEFAULT_HTML = OUTPUT_DIR / "dashboard.html"
 DEFAULT_PNG = OUTPUT_DIR / "dashboard.png"

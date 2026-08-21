@@ -21,7 +21,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-BASE_DIR = Path(__file__).parent
+SRC_DIR = Path(__file__).resolve().parent
+BASE_DIR = SRC_DIR.parent  # 项目根目录
 OUTPUT_DIR = BASE_DIR / "output"
 
 # 默认固定使用的风格
@@ -42,7 +43,7 @@ def step_generate(date=None, style=None):
     if style is None:
         style = DEFAULT_STYLE
     print(f"[INFO] 今日风格: {style}")
-    cmd = [sys.executable, str(BASE_DIR / "generate_dashboard.py"),
+    cmd = [sys.executable, str(SRC_DIR / "generate_dashboard.py"),
            "--style", style]
     if date:
         cmd.extend(["--date", date])
@@ -65,7 +66,7 @@ def step_screenshot():
         print("[FAIL] HTML文件不存在，请先完成步骤1")
         return False
 
-    cmd = [sys.executable, str(BASE_DIR / "render_screenshot.py")]
+    cmd = [sys.executable, str(SRC_DIR / "render_screenshot.py")]
     result = subprocess.run(cmd, cwd=str(BASE_DIR))
     if result.returncode != 0:
         print("[WARN] PNG截图失败（可能未安装playwright），跳过此步骤")
@@ -86,7 +87,7 @@ def step_display():
         print("[FAIL] PNG文件不存在，请先完成步骤2")
         return False
 
-    cmd = [sys.executable, str(BASE_DIR / "display_on_eink.py"),
+    cmd = [sys.executable, str(SRC_DIR / "display_on_eink.py"),
            "--image", str(png_path)]
     result = subprocess.run(cmd, cwd=str(BASE_DIR))
     if result.returncode != 0:

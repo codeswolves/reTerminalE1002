@@ -19,7 +19,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-DATA_DIR = Path(__file__).resolve().parent / "data"
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 # 需要刷新(或可被单独指定刷新)的 CSV 文件
 CSV_FILES = [
@@ -30,8 +30,8 @@ CSV_FILES = [
     "slogan.csv",
 ]
 
-# tasks.csv 固定列数: No.,date,task_name,yesterday progress,today progress,priority,finished
-TASKS_COL_COUNT = 7
+# tasks.csv 固定列数: No.,date,task_name,yesterday progress,today progress,priority,finished,completed date
+TASKS_COL_COUNT = 8
 
 
 # ---------- 通用工具 ----------
@@ -133,7 +133,8 @@ def _apply_tasks_progress(lines, matcher=None, delta=None, set_today=None):
     Returns:
         (lines, changed_parts, skipped_line_nums)
     """
-    # 列布局: No.(0), date(1), task_name(2), yesterday(3), today(4), priority(5), finished(6)
+    # 列布局: No.(0), date(1), task_name(2), yesterday(3), today(4), priority(5), finished(6), completed date(7)
+    today = _today_str()
     changed, skipped = [], []
     for i, line in enumerate(lines[1:], start=1):
         parts = line.rstrip("\n").split(",")
@@ -156,6 +157,7 @@ def _apply_tasks_progress(lines, matcher=None, delta=None, set_today=None):
             parts[4] = str(set_today)
         if int(parts[4]) >= 100:
             parts[6] = "yes"
+            parts[7] = today  # 记录完成日期
         lines[i] = ",".join(parts) + "\n"
         changed.append(parts)
     return lines, changed, skipped
@@ -167,10 +169,10 @@ def refresh_tasks(path: Path, value) -> None:
     模式1: ``python3 refresh_csv.py tasks 3``         → 全部任务 today +3
     模式2: ``python3 refresh_csv.py tasks 2 100``     → 按编号指定任务 today 设为 100
     模式3: ``python3 refresh_csv.py tasks 2 +3``      → 按编号指定任务 today +3
-    规则: today progress >= 100 时 finished 自动置为 yes;
+    规则: today progress >= 100 时 finished 自动置为 yes, 并记录 completed date;
           yesterday progress 始终记录更新前的旧 today 值
     """
-    # 列布局: No.(0), date(1), task_name(2), yesterday(3), today(4), priority(5), finished(6)
+    # 列布局: No.(0), date(1), task_name(2), yesterday(3), today(4), priority(5), finished(6), completed date(7)
 
     # 模式2/3: 按任务编号操作 (value 为 [编号, 参数])
     if isinstance(value, list):

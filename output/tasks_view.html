@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>任务清单</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #f5f6f8;
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    color: #1f2733;
+    min-height: 100vh;
+    padding: 28px 20px 48px;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; }
+
+  /* 顶部 */
+  .header {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    margin-bottom: 18px;
+  }
+  .title { font-size: 26px; font-weight: 700; color: #1f2733; letter-spacing: 1px; }
+  .subtitle { font-size: 13px; color: #5a6577; margin-top: 6px; }
+  .stats { display: flex; gap: 10px; }
+  .stat {
+    background: #ffffff; border: 1px solid #e3e8f0; border-radius: 10px;
+    padding: 8px 14px; text-align: center; min-width: 76px;
+  }
+  .stat b { display: block; font-size: 20px; color: #1f2733; }
+  .stat span { font-size: 11px; color: #5a6577; }
+
+  /* 筛选按钮 */
+  .filters {
+    display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px;
+  }
+  .filter-btn {
+    background: #ffffff; color: #3a4456;
+    border: 1px solid #d8dee9; border-radius: 20px;
+    padding: 7px 16px; font-size: 13px; cursor: pointer;
+    transition: all .15s ease; user-select: none;
+  }
+  .filter-btn:hover { border-color: #60a5fa; color: #1f2733; }
+  .filter-btn.active {
+    background: #3b6fb0; border-color: #3b6fb0; color: #ffffff; font-weight: 600;
+  }
+  .filter-btn .cnt { opacity: .65; margin-left: 4px; font-weight: 400; }
+
+  /* 任务卡片 */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .card {
+    background: #ffffff; border: 1px solid #e3e8f0; border-radius: 12px;
+    padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
+    transition: all .2s ease;
+  }
+  .card:hover { border-color: #c8d1de; transform: translateY(-2px); }
+  .card.hidden { display: none; }
+  .card.done { border-left: 3px solid #2e9e5b; }
+  .card.todo { border-left: 3px solid #d29922; }
+
+  .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .card-no { font-size: 11px; color: #8893a7; margin-bottom: 3px; }
+  .card-name { font-size: 15px; font-weight: 600; color: #1f2733; line-height: 1.4; }
+  .badge {
+    flex: none; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 12px;
+  }
+
+  .progress-row { display: flex; align-items: center; gap: 10px; }
+  .bar { flex: 1; height: 8px; background: #eef1f6; border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width .3s ease; }
+  .bar-pct { font-size: 13px; font-weight: 700; color: #1f2733; width: 42px; text-align: right; }
+
+  .card-meta { display: flex; justify-content: space-between; font-size: 11px; color: #8893a7; }
+  .meta-done { color: #2e9e5b; }
+  .meta-time { color: #3b6fb0; }
+  .empty { text-align: center; color: #8893a7; padding: 60px 0; font-size: 14px; grid-column: 1 / -1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div>
+      <div class="title">任务清单</div>
+      <div class="subtitle">共 22 个任务 · 已完成 10 · 进行中 12</div>
+    </div>
+    <div class="stats">
+      <div class="stat"><b>10</b><span>已完成</span></div>
+      <div class="stat"><b>12</b><span>进行中</span></div>
+    </div>
+  </div>
+
+  <div class="filters" id="filters">
+    <button class="filter-btn active" data-filter="all">全部<span class="cnt">22</span></button>
+    <button class="filter-btn" data-filter="done">已完成任务<span class="cnt">10</span></button>
+    <button class="filter-btn" data-filter="todo">未完成任务<span class="cnt">12</span></button>
+    <button class="filter-btn" data-filter="high">高优先级<span class="cnt">5</span></button>
+    <button class="filter-btn" data-filter="medium">中优先级<span class="cnt">5</span></button>
+    <button class="filter-btn" data-filter="low">低优先级<span class="cnt">2</span></button>
+  </div>
+
+  <div class="grid" id="grid"></div>
+</div>
+
+<script>
+const TASKS = [{"no": "1", "name": "完成进度看板项目", "date": "2026/08/01", "yesterday": 70, "today": 100, "priority": "high", "finished": true, "completed_date": "2026/08/01"}, {"no": "2", "name": "完成华为与hg仿真", "date": "2026/08/01", "yesterday": 49, "today": 46, "priority": "high", "finished": false, "completed_date": ""}, {"no": "3", "name": "完成网络测量标准提纲", "date": "2026/08/01", "yesterday": 26, "today": 26, "priority": "high", "finished": false, "completed_date": ""}, {"no": "4", "name": "完成AI综述论文编写", "date": "2026/08/03", "yesterday": 10, "today": 10, "priority": "medium", "finished": false, "completed_date": ""}, {"no": "5", "name": "完成仿真论文编写", "date": "2026/08/03", "yesterday": 5, "today": 5, "priority": "medium", "finished": false, "completed_date": ""}, {"no": "6", "name": "完成测量专利编写", "date": "2026/08/03", "yesterday": 5, "today": 5, "priority": "high", "finished": false, "completed_date": ""}, {"no": "7", "name": "完成调优专利编写", "date": "2026/08/03", "yesterday": 1, "today": 1, "priority": "low", "finished": false, "completed_date": ""}, {"no": "8", "name": "完成AI跟踪SIGCOMM", "date": "2026/08/03", "yesterday": 5, "today": 100, "priority": "medium", "finished": true, "completed_date": "2026/08/03"}, {"no": "9", "name": "完成电脑文件整理", "date": "2026/08/03", "yesterday": 30, "today": 35, "priority": "medium", "finished": false, "completed_date": ""}, {"no": "10", "name": "完成汽车保险购买", "date": "2026/08/03", "yesterday": 5, "today": 100, "priority": "high", "finished": true, "completed_date": "2026/08/03"}, {"no": "11", "name": "搭建个人知识库(workbuddy/llm-wiki/obsidian)", "date": "2026/08/03", "yesterday": 85, "today": 100, "priority": "low", "finished": true, "completed_date": "2026/08/03"}, {"no": "12", "name": "完成时变路由报告修改", "date": "2026/08/03", "yesterday": 0, "today": 50, "priority": "high", "finished": false, "completed_date": ""}, {"no": "13", "name": "预约医生线上复诊", "date": "2026/08/03", "yesterday": 0, "today": 100, "priority": "medium", "finished": true, "completed_date": "2026/08/03"}, {"no": "14", "name": "给博客绑定域名和公网ip", "date": "2026/08/03", "yesterday": 0, "today": 100, "priority": "low", "finished": true, "completed_date": "2026/08/03"}, {"no": "15", "name": "修改paypal密码", "date": "2026/08/04", "yesterday": 0, "today": 100, "priority": "medium", "finished": true, "completed_date": "2026/08/04"}, {"no": "16", "name": "完成bgp blockchain专利编写", "date": "2026/08/04", "yesterday": 0, "today": 0, "priority": "low", "finished": false, "completed_date": ""}, {"no": "17", "name": "完成以前的论文修改并投稿", "date": "2026/08/04", "yesterday": 0, "today": 0, "priority": "medium", "finished": false, "completed_date": ""}, {"no": "18", "name": "完成旧博客文章的导入", "date": "2026/08/04", "yesterday": 0, "today": 100, "priority": "low", "finished": true, "completed_date": "2026/08/04"}, {"no": "19", "name": "完成百度网盘数据迁移", "date": "2026/08/05", "yesterday": 0, "today": 100, "priority": "low", "finished": true, "completed_date": "2026/08/05"}, {"no": "20", "name": "完成2台旧电脑改造", "date": "2026/08/06", "yesterday": 0, "today": 0, "priority": "medium", "finished": false, "completed_date": ""}, {"no": "21", "name": "推进CCSA行标与华为开会", "date": "2026/08/14", "yesterday": 0, "today": 0, "priority": "high", "finished": false, "completed_date": ""}, {"no": "22", "name": "完成流程设计的业务单元梳理", "date": "2026/08/20", "yesterday": 0, "today": 100, "priority": "high", "finished": true, "completed_date": "2026/08/20"}];
+
+const PRIORITY = {
+  high: { label: '高优先级', color: '#d6453d', bg: '#fdeceb' },
+  medium: { label: '中优先级', color: '#3b6fb0', bg: '#e8eef8' },
+  low: { label: '低优先级', color: '#2e9e5b', bg: '#e7f4ec' },
+};
+const PRIO_ORDER = { high: 0, medium: 1, low: 2 };
+
+// 任务创建时间转可比较数值 (YYYY/MM/DD)
+function dateVal(t) {
+  const m = String(t.date || '').match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  return m ? (+m[1]) * 10000 + (+m[2]) * 100 + (+m[3]) : 0;
+}
+
+// 解析 YYYY/MM/DD 为本地日期
+function parseDate(s) {
+  const m = String(s || '').match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+}
+
+// 任务执行时间(天): 已完成=创建日→完成日, 未完成=创建日→今天
+function execDays(t) {
+  const start = parseDate(t.date);
+  const end = t.finished ? parseDate(t.completed_date) : new Date();
+  if (!start || !end) return null;
+  return Math.round((end - start) / 86400000) + 1;
+}
+
+function matches(t, f) {
+  switch (f) {
+    case 'all': return true;
+    case 'done': return t.finished;
+    case 'todo': return !t.finished;
+    case 'high': return t.priority === 'high' && !t.finished;
+    case 'medium': return t.priority === 'medium' && !t.finished;
+    case 'low': return t.priority === 'low' && !t.finished;
+    default: return true;
+  }
+}
+
+function render(filter) {
+  const grid = document.getElementById('grid');
+  if (!grid) return;
+  const list = TASKS.filter(t => matches(t, filter));
+  // 排序: 高 → 中 → 低优先级; "全部"标签下未完成任务在前
+  list.sort((a, b) => {
+    // 高/中/低优先级标签: 只显示未完成任务, 按创建时间(升序)排序
+    if (filter === 'high' || filter === 'medium' || filter === 'low') {
+      return dateVal(a) - dateVal(b);
+    }
+    const pa = PRIO_ORDER[a.priority] != null ? PRIO_ORDER[a.priority] : 1;
+    const pb = PRIO_ORDER[b.priority] != null ? PRIO_ORDER[b.priority] : 1;
+    if (pa !== pb) return pa - pb;
+    if (filter === 'all' && a.finished !== b.finished) return a.finished ? 1 : -1;
+    return (Number(a.no) || 0) - (Number(b.no) || 0);
+  });
+  if (!list.length) {
+    grid.innerHTML = '<div class="empty">该筛选下暂无任务</div>';
+    return;
+  }
+  grid.innerHTML = list.map(t => {
+    const p = PRIORITY[t.priority] || PRIORITY.medium;
+    const days = execDays(t);
+    const status = t.finished
+      ? '<span class="meta-done">✓ 已完成' + (t.completed_date ? ' · ' + t.completed_date : '') + '</span>'
+      : '<span>进行中</span>';
+    const timeInfo = days != null
+      ? '<span class="meta-time">' + (t.finished ? '执行时间：' + days + ' 天' : '已进行 ' + days + ' 天') + '</span>'
+      : '';
+    return `
+      <div class="card ${t.finished ? 'done' : 'todo'}">
+        <div class="card-head">
+          <div>
+            <div class="card-no">No.${t.no} · 创建于 ${t.date}</div>
+            <div class="card-name">${t.name}</div>
+          </div>
+          <span class="badge" style="color:${p.color};background:${p.bg}">${p.label}</span>
+        </div>
+        <div class="progress-row">
+          <div class="bar"><div class="bar-fill" style="width:${t.today}%;background:${p.color}"></div></div>
+          <span class="bar-pct">${t.today}%</span>
+        </div>
+        <div class="card-meta">${status}${timeInfo}</div>
+      </div>`;
+  }).join('');
+}
+
+function init() {
+  const filtersEl = document.getElementById('filters');
+  if (!filtersEl) return;
+  filtersEl.addEventListener('click', e => {
+    const btn = e.target.closest('.filter-btn');
+    if (!btn) return;
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    render(btn.dataset.filter);
+  });
+  render('all');
+}
+
+// 等 DOM 就绪再初始化, 避免元素未加载时出现空引用
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+</script>
+</body>
+</html>

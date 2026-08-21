@@ -24,7 +24,7 @@ import sys
 import time
 from pathlib import Path
 
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).resolve().parent.parent  # 项目根目录（src/ 的父目录）
 OUTPUT_DIR = BASE_DIR / "output"
 DEFAULT_IMAGE = OUTPUT_DIR / "dashboard.png"
 

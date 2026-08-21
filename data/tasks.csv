@@ -19,5 +19,6 @@ No.,date,task_name,yesterday progress,today progress,priority,finished,completed
 18,2026/08/04,完成旧博客文章的导入,0,100,low,yes,2026/08/04
 19,2026/08/05,完成百度网盘数据迁移,0,100,low,yes,2026/08/05
 20,2026/08/06,完成2台旧电脑改造,0,0,medium,no,
-21,2026/08/14,推进CCSA行标与华为开会,0,100,high,yes
+21,2026/08/14,推进CCSA行标与华为开会,0,100,high,yes,2026/08/14
 22,2026/08/20,完成流程设计的业务单元梳理,0,100,high,yes,2026/08/20
+23,2026/08/21,研究AI做PPT,0,20,low,no,

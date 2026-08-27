@@ -25,4 +25,5 @@ No.,date,task_name,yesterday progress,today progress,priority,finished,completed
 24,2026/08/22,做个任务看板,100,100,low,yes,2026/08/22
 25,2026/08/22,用AI-Agent处理论文邮件订阅,100,100,low,yes,2026/08/22
 26,2026/08/26,让qoder优化仿真工具可视化页面,0,0,low,no,
-27,2026/08/26,创建微信公众号文章发布skill,0,0,low,no,
+27,2026/08/26,创建微信公众号文章发布skill,0,100,low,yes,2026/08/27
+28,2026/08/27,看完2026年一三专项指南,0,0,low,no,

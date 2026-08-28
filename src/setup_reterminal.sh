@@ -21,9 +21,11 @@ echo ""
 echo "[1/4] 安装 Python 依赖..."
 pip3 install --user Pillow playwright 2>/dev/null || pip install --break-system-packages Pillow playwright
 
-# 2. 安装 Chromium (Playwright 截图用)
-echo "[2/4] 安装 Chromium 浏览器..."
+# 2. 安装 Chromium (Playwright 截图用) 与中文字体 (设备浏览器渲染中文必需)
+echo "[2/4] 安装 Chromium 浏览器与中文字体..."
 python3 -m playwright install chromium 2>/dev/null || echo "[WARN] Chromium 安装跳过（可手动安装）"
+echo "[INFO] 安装中文字体 (fonts-noto-cjk)..."
+sudo apt-get update >/dev/null 2>&1 && sudo apt-get install -y fonts-noto-cjk || echo "[WARN] 中文字体安装失败，SenseCraft 加载页面中文可能显示为方块"
 
 # 3. 创建数据目录
 echo "[3/4] 初始化数据目录..."

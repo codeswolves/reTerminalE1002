@@ -569,7 +569,7 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{
     background: {theme['page_bg']};
-    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "WenQuanYi Micro Hei", "WenQuanYi Zen Hei", system-ui, sans-serif;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -799,7 +799,8 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
 # ----------------------------------------------------------------------------
 # 主流程
 # ----------------------------------------------------------------------------
-def generate(target_date=None, open_browser=False, style=DEFAULT_STYLE, out_file=None):
+def generate(target_date=None, open_browser=False, style=DEFAULT_STYLE, out_file=None,
+             no_embed=False):
     if target_date is None:
         target_date = datetime.now().strftime("%Y-%m-%d")
     weight_info = get_weight_info(target_date)
@@ -814,6 +815,13 @@ def generate(target_date=None, open_browser=False, style=DEFAULT_STYLE, out_file
     target_path = out_file or OUT_HTML
     with open(target_path, "w", encoding="utf-8") as f:
         f.write(html)
+    # 默认嵌入中文字体子集，保证设备端（如 reTerminal）无中文字体也能正常显示
+    if not no_embed:
+        try:
+            import embed_cjk_font
+            embed_cjk_font.embed_font_file(target_path)
+        except Exception as exc:
+            print(f"[WARN] 中文字体嵌入失败，已跳过: {exc}")
     print(f"[OK] 生成 {target_path} (style={style}, date={target_date})")
     if open_browser:
         import webbrowser
@@ -821,17 +829,17 @@ def generate(target_date=None, open_browser=False, style=DEFAULT_STYLE, out_file
     return target_path
 
 
-def generate_all(target_date=None):
+def generate_all(target_date=None, no_embed=False):
     """循环生成所有主题到独立文件：dashboard_<style>.html"""
     if target_date is None:
         target_date = datetime.now().strftime("%Y-%m-%d")
     paths = []
     for style in THEMES:
         p = os.path.join(OUT_DIR, f"dashboard_{style}.html")
-        generate(target_date, False, style, p)
+        generate(target_date, False, style, p, no_embed)
         paths.append(p)
     # 同时生成默认名 dashboard.html
-    default_path = generate(target_date, False, DEFAULT_STYLE)
+    default_path = generate(target_date, False, DEFAULT_STYLE, no_embed=no_embed)
     paths.append(default_path)
     return paths
 
@@ -843,8 +851,10 @@ if __name__ == "__main__":
     parser.add_argument("--style", type=str, default=DEFAULT_STYLE,
                         choices=list(THEMES.keys()), help="主题风格")
     parser.add_argument("--all", action="store_true", help="循环生成所有主题到独立文件")
+    parser.add_argument("--no-embed", action="store_true",
+                        help="不嵌入中文字体（默认自动嵌入，解决设备端中文乱码）")
     args = parser.parse_args()
     if args.all:
-        generate_all(args.date)
+        generate_all(args.date, args.no_embed)
     else:
-        generate(args.date, args.open, args.style)
+        generate(args.date, args.open, args.style, no_embed=args.no_embed)

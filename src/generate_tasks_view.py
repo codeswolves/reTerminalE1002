@@ -114,7 +114,7 @@ def build_html(tasks):
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{
     background: #f5f6f8;
-    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "WenQuanYi Micro Hei", "WenQuanYi Zen Hei", system-ui, sans-serif;
     color: #1f2733;
     min-height: 100vh;
     padding: 28px 20px 48px;

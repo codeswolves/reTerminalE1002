@@ -693,7 +693,7 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
 
   /* calendar */
   .calendar-panel {{ flex: 1; }}
-  .cal-header {{ display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3px; }}
+  .cal-header {{ display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px; }}
   .cal-date {{ font-size: 14px; color: {theme['cal_head_color']}; }}
   .cal-stats {{
     display: inline-flex;
@@ -713,17 +713,17 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
   .cal-grid {{
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 2px;
+    gap: 1px;
   }}
   /*日历的字体*/
-  .cal-grid.wk {{ margin-bottom: 1px; }}
+  .cal-grid.wk {{ margin-bottom: 2px; }}
   .wk span {{
     text-align: center;
     font-size: 14px;
     color: {theme['cal_head_color']};
   }}
   .cell {{
-    height: 20px;
+    height: 19px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -737,7 +737,7 @@ def build_html(weight_info, goals, fitness_info, tasks_info, fitness_rows,
     display: flex;
     justify-content: center;
     gap: 14px;
-    margin-top: -1px;
+    margin-top: 4px;
     font-size: 14px;
   }}
   .cal-legend span {{ display: flex; align-items: center; gap: 5px; }}

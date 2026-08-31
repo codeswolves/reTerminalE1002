@@ -1,0 +1,633 @@
+[
+  {
+    "no": "1",
+    "name": "完成进度看板项目",
+    "date": "2026/08/01",
+    "priority": "high",
+    "category": "工程",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/01",
+        "progress": 70,
+        "note": ""
+      },
+      {
+        "phase": "推进",
+        "date": "前日",
+        "progress": 70,
+        "note": ""
+      },
+      {
+        "phase": "完成",
+        "date": "2026/08/01",
+        "progress": 100,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "2",
+    "name": "完成华为与hg仿真",
+    "date": "2026/08/01",
+    "priority": "high",
+    "category": "工程",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/01",
+        "progress": 46,
+        "note": ""
+      },
+      {
+        "phase": "推进",
+        "date": "前日",
+        "progress": 46,
+        "note": ""
+      },
+      {
+        "phase": "完成",
+        "date": "2026/08/25",
+        "progress": 100,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "3",
+    "name": "完成网络测量标准提纲",
+    "date": "2026/08/01",
+    "priority": "high",
+    "category": "标准",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/01",
+        "progress": 26,
+        "note": "开始编写网络测量标准提纲"
+      },
+      {
+        "phase": "当前",
+        "date": "2026/08/31",
+        "progress": 26,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "4",
+    "name": "完成AI综述论文编写",
+    "date": "2026/08/03",
+    "priority": "medium",
+    "category": "科研",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/03",
+        "progress": 10,
+        "note": "开始AI综述论文调研"
+      }
+    ]
+  },
+  {
+    "no": "5",
+    "name": "完成仿真论文编写",
+    "date": "2026/08/03",
+    "priority": "medium",
+    "category": "科研",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/03",
+        "progress": 5,
+        "note": "开始仿真论文编写"
+      }
+    ]
+  },
+  {
+    "no": "6",
+    "name": "完成测量专利编写",
+    "date": "2026/08/03",
+    "priority": "high",
+    "category": "专利",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/03",
+        "progress": 5,
+        "note": "开始测量专利编写"
+      },
+      {
+        "phase": "当前",
+        "date": "2026/08/31",
+        "progress": 5,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "7",
+    "name": "完成调优专利编写",
+    "date": "2026/08/03",
+    "priority": "low",
+    "category": "专利",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/03",
+        "progress": 1,
+        "note": "开始调优专利编写"
+      },
+      {
+        "phase": "当前",
+        "date": "2026/08/31",
+        "progress": 1,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "8",
+    "name": "完成AI跟踪SIGCOMM",
+    "date": "2026/08/03",
+    "priority": "medium",
+    "category": "科研",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/03",
+        "progress": 5,
+        "note": ""
+      },
+      {
+        "phase": "推进",
+        "date": "前日",
+        "progress": 5,
+        "note": ""
+      },
+      {
+        "phase": "完成",
+        "date": "2026/08/03",
+        "progress": 100,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "9",
+    "name": "完成电脑文件整理",
+    "date": "2026/08/03",
+    "priority": "medium",
+    "category": "个人",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/03",
+        "progress": 30,
+        "note": "开始整理电脑文件"
+      },
+      {
+        "phase": "推进",
+        "date": "2026/08/31",
+        "progress": 35,
+        "note": "持续整理中"
+      }
+    ]
+  },
+  {
+    "no": "10",
+    "name": "完成汽车保险购买",
+    "date": "2026/08/03",
+    "priority": "high",
+    "category": "个人",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/03",
+        "progress": 5,
+        "note": ""
+      },
+      {
+        "phase": "推进",
+        "date": "前日",
+        "progress": 5,
+        "note": ""
+      },
+      {
+        "phase": "完成",
+        "date": "2026/08/03",
+        "progress": 100,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "11",
+    "name": "搭建个人知识库(workbuddy/llm-wiki/obsidian)",
+    "date": "2026/08/03",
+    "priority": "low",
+    "category": "个人",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/03",
+        "progress": 85,
+        "note": ""
+      },
+      {
+        "phase": "推进",
+        "date": "前日",
+        "progress": 85,
+        "note": ""
+      },
+      {
+        "phase": "完成",
+        "date": "2026/08/03",
+        "progress": 100,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "12",
+    "name": "完成时变路由报告修改",
+    "date": "2026/08/03",
+    "priority": "high",
+    "category": "科研",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/03",
+        "progress": 0,
+        "note": "待修改时变路由报告"
+      },
+      {
+        "phase": "推进",
+        "date": "2026/08/31",
+        "progress": 60,
+        "note": "合并几家单位的稿件",
+        "owner": "李佳伟"
+      }
+    ]
+  },
+  {
+    "no": "13",
+    "name": "预约医生线上复诊",
+    "date": "2026/08/03",
+    "priority": "medium",
+    "category": "个人",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/03",
+        "progress": 100,
+        "note": ""
+      },
+      {
+        "phase": "完成",
+        "date": "2026/08/03",
+        "progress": 100,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "14",
+    "name": "给博客绑定域名和公网ip",
+    "date": "2026/08/03",
+    "priority": "low",
+    "category": "个人",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/03",
+        "progress": 100,
+        "note": ""
+      },
+      {
+        "phase": "完成",
+        "date": "2026/08/03",
+        "progress": 100,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "15",
+    "name": "修改paypal密码",
+    "date": "2026/08/04",
+    "priority": "medium",
+    "category": "个人",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/04",
+        "progress": 100,
+        "note": ""
+      },
+      {
+        "phase": "完成",
+        "date": "2026/08/04",
+        "progress": 100,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "16",
+    "name": "完成bgp blockchain专利编写",
+    "date": "2026/08/04",
+    "priority": "low",
+    "category": "专利",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/04",
+        "progress": 0,
+        "note": "待编写BGP Blockchain专利"
+      }
+    ]
+  },
+  {
+    "no": "17",
+    "name": "完成以前的论文修改并投稿",
+    "date": "2026/08/04",
+    "priority": "medium",
+    "category": "科研",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/04",
+        "progress": 0,
+        "note": "待修改旧论文并投稿"
+      }
+    ]
+  },
+  {
+    "no": "18",
+    "name": "完成旧博客文章的导入",
+    "date": "2026/08/04",
+    "priority": "low",
+    "category": "个人",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/04",
+        "progress": 100,
+        "note": ""
+      },
+      {
+        "phase": "完成",
+        "date": "2026/08/04",
+        "progress": 100,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "19",
+    "name": "完成百度网盘数据迁移",
+    "date": "2026/08/05",
+    "priority": "low",
+    "category": "个人",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/05",
+        "progress": 100,
+        "note": ""
+      },
+      {
+        "phase": "完成",
+        "date": "2026/08/05",
+        "progress": 100,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "20",
+    "name": "完成2台旧电脑改造",
+    "date": "2026/08/06",
+    "priority": "medium",
+    "category": "个人",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/06",
+        "progress": 0,
+        "note": "开始改造旧电脑"
+      },
+      {
+        "phase": "推进",
+        "date": "2026/08/31",
+        "progress": 50,
+        "note": "改造进行中"
+      }
+    ]
+  },
+  {
+    "no": "21",
+    "name": "推进CCSA行标与华为开会",
+    "date": "2026/08/14",
+    "priority": "high",
+    "category": "标准",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/14",
+        "progress": 100,
+        "note": ""
+      },
+      {
+        "phase": "完成",
+        "date": "2026/08/14",
+        "progress": 100,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "22",
+    "name": "完成流程设计的业务单元梳理",
+    "date": "2026/08/20",
+    "priority": "high",
+    "category": "工程",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/20",
+        "progress": 100,
+        "note": ""
+      },
+      {
+        "phase": "完成",
+        "date": "2026/08/20",
+        "progress": 100,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "23",
+    "name": "研究AI做PPT",
+    "date": "2026/08/21",
+    "priority": "low",
+    "category": "个人",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/21",
+        "progress": 50,
+        "note": "开始研究AI做PPT方案"
+      },
+      {
+        "phase": "当前",
+        "date": "2026/08/31",
+        "progress": 50,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "24",
+    "name": "做个任务看板",
+    "date": "2026/08/22",
+    "priority": "low",
+    "category": "工程",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/22",
+        "progress": 100,
+        "note": ""
+      },
+      {
+        "phase": "完成",
+        "date": "2026/08/22",
+        "progress": 100,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "25",
+    "name": "用AI-Agent处理论文邮件订阅",
+    "date": "2026/08/22",
+    "priority": "low",
+    "category": "科研",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/22",
+        "progress": 100,
+        "note": ""
+      },
+      {
+        "phase": "完成",
+        "date": "2026/08/22",
+        "progress": 100,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "26",
+    "name": "让qoder优化仿真工具可视化页面",
+    "date": "2026/08/26",
+    "priority": "low",
+    "category": "工程",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/26",
+        "progress": 0,
+        "note": "待让qoder优化仿真工具可视化页面"
+      }
+    ]
+  },
+  {
+    "no": "27",
+    "name": "创建微信公众号文章发布skill",
+    "date": "2026/08/26",
+    "priority": "low",
+    "category": "个人",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/26",
+        "progress": 100,
+        "note": ""
+      },
+      {
+        "phase": "完成",
+        "date": "2026/08/27",
+        "progress": 100,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "28",
+    "name": "看完2026年一三专项指南",
+    "date": "2026/08/27",
+    "priority": "low",
+    "category": "科研",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/27",
+        "progress": 100,
+        "note": ""
+      },
+      {
+        "phase": "完成",
+        "date": "2026/08/28",
+        "progress": 100,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "29",
+    "name": "开发一个流程优化的小程序",
+    "date": "2026/08/28",
+    "priority": "high",
+    "category": "工程",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/28",
+        "progress": 100,
+        "note": ""
+      },
+      {
+        "phase": "完成",
+        "date": "2026/08/28",
+        "progress": 100,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "30",
+    "name": "完善reTerminal项目补充任务推进树状图记录",
+    "date": "2026/08/31",
+    "priority": "low",
+    "category": "工程",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/08/31",
+        "progress": 0,
+        "note": "待完善reTerminal项目任务推进树状图记录"
+      },
+      {
+        "phase": "完成",
+        "date": "2026/08/31",
+        "progress": 100,
+        "note": "一键完成"
+      }
+    ]
+  }
+]

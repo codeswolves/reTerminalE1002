@@ -17,9 +17,9 @@ from datetime import datetime, timedelta, date
 # ----------------------------------------------------------------------------
 # 路径
 # ----------------------------------------------------------------------------
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 项目根目录（src/ 的父目录）
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # 项目根目录（src/generators/ 的祖父目录）
 DATA_DIR = os.path.join(BASE_DIR, "data")
-OUT_DIR = os.path.join(BASE_DIR, "output")
+OUT_DIR = os.path.join(BASE_DIR, "output", "dashboard")
 os.makedirs(OUT_DIR, exist_ok=True)
 OUT_HTML = os.path.join(OUT_DIR, "dashboard.html")
 
@@ -359,41 +359,27 @@ def get_fitness_info(target_date):
 
 
 def get_tasks_info(target_date):
-    rows = read_csv_dicts(os.path.join(DATA_DIR, "tasks.csv"))
-    # 过滤空行
-    rows = [r for r in rows if (r.get("task_name") or "").strip()]
-    # 统计全年完成数量（所有日期，today progress 为 100% 的任务）
-    completed_count = 0
-    for r in rows:
-        try:
-            if int(float(r.get("today progress") or 0)) == 100:
-                completed_count += 1
-        except (ValueError, TypeError):
-            pass
-    if not rows:
-        return {"tasks": [], "completed_count": 0}
-    # 按任务编号去重，保留最新日期记录
-    task_map = {}
-    for r in rows:
-        no = r.get("No.", "").strip()
-        d = _norm_date(r.get("date"))
-        if no not in task_map or d > task_map[no][1]:
-            try:
-                yp = int(float(r.get("yesterday progress") or 0))
-            except (ValueError, TypeError):
-                yp = 0
-            try:
-                tp = int(float(r.get("today progress") or 0))
-            except (ValueError, TypeError):
-                tp = 0
-            task_map[no] = (r, d, yp, tp)
+    """从 task_flows.json 读取任务信息（复用 generate_task_flow 的数据层）。"""
+    gen_dir = os.path.join(BASE_DIR, "src", "generators")
+    if gen_dir not in sys.path:
+        sys.path.insert(0, gen_dir)
+    from generate_task_flow import read_tasks
+    all_tasks = read_tasks()
+    completed_count = sum(1 for t in all_tasks if t["finished"])
     tasks = []
-    for r, _, yp, tp in task_map.values():
-        if (r.get("finished") or "").strip().lower() == "yes":
+    for t in all_tasks:
+        if t["finished"]:
             continue
-        tasks.append({"name": r.get("task_name", ""), "progress": tp,
-                      "yesterday_progress": yp, "today_progress": tp,
-                      "priority": r.get("priority", "medium")})
+        nodes = t.get("nodes", [])
+        today_prog = nodes[-1]["progress"] if nodes else 0
+        yesterday_prog = nodes[-2]["progress"] if len(nodes) >= 2 else 0
+        tasks.append({
+            "name": t["name"],
+            "progress": today_prog,
+            "yesterday_progress": yesterday_prog,
+            "today_progress": today_prog,
+            "priority": t["priority"],
+        })
     return {"tasks": tasks, "completed_count": completed_count}
 
 
@@ -818,6 +804,7 @@ def generate(target_date=None, open_browser=False, style=DEFAULT_STYLE, out_file
     # 默认嵌入中文字体子集，保证设备端（如 reTerminal）无中文字体也能正常显示
     if not no_embed:
         try:
+            sys.path.insert(0, os.path.join(os.path.dirname(BASE_DIR), "src", "utils"))
             import embed_cjk_font
             embed_cjk_font.embed_font_file(target_path)
         except Exception as exc:

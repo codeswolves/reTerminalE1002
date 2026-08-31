@@ -5,7 +5,7 @@ reTerminal E1002 墨水屏显示工具
 将生成的 PNG 图片显示到 reTerminal 的墨水屏上。
 
 用法:
-    python display_on_eink.py                          # 显示 output/dashboard.png
+    python display_on_eink.py                          # 显示 output/screenshots/dashboard.png
     python display_on_eink.py --image custom.png       # 指定图片
     python display_on_eink.py --clear                  # 清屏
 
@@ -24,9 +24,9 @@ import sys
 import time
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent  # 项目根目录（src/ 的父目录）
+BASE_DIR = Path(__file__).resolve().parent.parent.parent  # 项目根目录（src/utils/ 的祖父目录）
 OUTPUT_DIR = BASE_DIR / "output"
-DEFAULT_IMAGE = OUTPUT_DIR / "dashboard.png"
+DEFAULT_IMAGE = OUTPUT_DIR / "screenshots" / "dashboard.png"
 
 
 def display_via_it8951(image_path):
@@ -120,7 +120,7 @@ def display_via_simple(image_path):
     img = img.resize((800, 480), Image.LANCZOS)
 
     # 保存为 BMP（framebuffer 兼容格式）
-    bmp_path = OUTPUT_DIR / "dashboard.bmp"
+    bmp_path = OUTPUT_DIR / "screenshots" / "dashboard.bmp"
     img.save(bmp_path)
 
     fb_path = "/dev/fb0"

@@ -13,7 +13,7 @@ embed_cjk_font.py
   4. 设备渲染时优先使用内嵌字体，不再依赖设备系统字体
 
 用法:
-    python embed_cjk_font.py output/dashboard.html           # 原地嵌入
+    python embed_cjk_font.py output/dashboard/dashboard.html   # 原地嵌入
     python embed_cjk_font.py --out out.html in.html           # 输出到新文件
     python embed_cjk_font.py --font <字体文件> in.html         # 指定字体
 

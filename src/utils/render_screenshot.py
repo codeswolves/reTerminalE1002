@@ -9,7 +9,7 @@ HTML 截图工具
 若系统无 Edge/Chrome，再回退到 playwright 自带 chromium（需 playwright install）。
 
 用法:
-    python render_screenshot.py                    # 截取 output/dashboard.html
+    python render_screenshot.py                    # 截取 output/dashboard/dashboard.html
     python render_screenshot.py --html custom.html # 指定HTML文件
 
 依赖:
@@ -22,10 +22,10 @@ import argparse
 import sys
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent  # 项目根目录（src/ 的父目录）
+BASE_DIR = Path(__file__).resolve().parent.parent.parent  # 项目根目录（src/utils/ 的祖父目录）
 OUTPUT_DIR = BASE_DIR / "output"
-DEFAULT_HTML = OUTPUT_DIR / "dashboard.html"
-DEFAULT_PNG = OUTPUT_DIR / "dashboard.png"
+DEFAULT_HTML = OUTPUT_DIR / "dashboard" / "dashboard.html"
+DEFAULT_PNG = OUTPUT_DIR / "screenshots" / "dashboard.png"
 
 # 浏览器启动顺序：系统 Edge → 系统 Chrome → playwright 自带 chromium
 LAUNCH_CHANNELS = [

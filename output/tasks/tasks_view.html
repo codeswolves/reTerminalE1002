@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>任务清单</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #f5f6f8;
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "WenQuanYi Micro Hei", "WenQuanYi Zen Hei", system-ui, sans-serif;
+    color: #1f2733;
+    min-height: 100vh;
+    padding: 28px 20px 48px;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; }
+
+  /* 顶部 */
+  .header {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    margin-bottom: 18px;
+  }
+  .title { font-size: 26px; font-weight: 700; color: #1f2733; letter-spacing: 1px; }
+  .subtitle { font-size: 13px; color: #5a6577; margin-top: 6px; }
+  .stats { display: flex; gap: 10px; }
+  .stat {
+    background: #ffffff; border: 1px solid #e3e8f0; border-radius: 10px;
+    padding: 8px 14px; text-align: center; min-width: 76px;
+  }
+  .stat b { display: block; font-size: 20px; color: #1f2733; }
+  .stat span { font-size: 11px; color: #5a6577; }
+
+  /* 筛选按钮 */
+  .filters {
+    display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px;
+  }
+  .filter-btn {
+    background: #ffffff; color: #3a4456;
+    border: 1px solid #d8dee9; border-radius: 20px;
+    padding: 7px 16px; font-size: 13px; cursor: pointer;
+    transition: all .15s ease; user-select: none;
+  }
+  .filter-btn:hover { border-color: #60a5fa; color: #1f2733; }
+  .filter-btn.active {
+    background: #3b6fb0; border-color: #3b6fb0; color: #ffffff; font-weight: 600;
+  }
+  .filter-btn .cnt { opacity: .65; margin-left: 4px; font-weight: 400; }
+
+  /* 任务卡片 */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .card {
+    background: #ffffff; border: 1px solid #e3e8f0; border-radius: 12px;
+    padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
+    transition: all .2s ease;
+  }
+  .card:hover { border-color: #c8d1de; transform: translateY(-2px); }
+  .card.hidden { display: none; }
+  .card.done { border-left: 3px solid #2e9e5b; }
+  .card.todo { border-left: 3px solid #d29922; }
+
+  .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .card-no { font-size: 11px; color: #8893a7; margin-bottom: 3px; }
+  .card-name { font-size: 15px; font-weight: 600; color: #1f2733; line-height: 1.4; }
+  .badge {
+    flex: none; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 12px;
+  }
+
+  .progress-row { display: flex; align-items: center; gap: 10px; }
+  .bar { flex: 1; height: 8px; background: #eef1f6; border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width .3s ease; }
+  .bar-pct { font-size: 13px; font-weight: 700; color: #1f2733; width: 42px; text-align: right; }
+
+  .card-meta { display: flex; justify-content: space-between; font-size: 11px; color: #8893a7; }
+  .meta-done { color: #2e9e5b; }
+  .meta-time { color: #3b6fb0; }
+  .flow-link { font-size: 14px; text-decoration: none; cursor: pointer; opacity: .5; transition: opacity .15s }
+  .flow-link:hover { opacity: 1 }
+  .del-task { font-size: 13px; cursor: pointer; opacity: .35; transition: opacity .15s; border: none; background: none; padding: 0 2px }
+  .del-task:hover { opacity: 1; color: #d6453d }
+  .done-task { font-size: 13px; cursor: pointer; opacity: .35; transition: opacity .15s; border: none; background: none; padding: 0 2px }
+  .done-task:hover { opacity: 1; color: #2e9e5b }
+  .empty { text-align: center; color: #8893a7; padding: 60px 0; font-size: 14px; grid-column: 1 / -1; }
+
+  /* 添加任务按钮 */
+  .add-task-btn {
+    background: #3b6fb0; color: #fff; border: none; border-radius: 20px;
+    padding: 8px 18px; font-size: 13px; cursor: pointer; font-weight: 600;
+    transition: all .15s; margin-left: 12px;
+  }
+  .add-task-btn:hover { background: #2d5a94; }
+
+  /* 弹窗 */
+  .modal-bg { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+  .modal-bg.hide { display: none; }
+  .modal { background: #fff; border-radius: 14px; padding: 24px; width: 400px; max-width: 90vw; box-shadow: 0 8px 32px rgba(0,0,0,.12); }
+  .modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #1f2733; }
+  .modal label { display: block; font-size: 12px; color: #5a6577; margin-bottom: 4px; margin-top: 12px; }
+  .modal input, .modal select, .modal textarea { width: 100%; padding: 8px 10px; border: 1px solid #d8dee9; border-radius: 8px; font-size: 13px; box-sizing: border-box; font-family: inherit; }
+  .modal textarea { resize: vertical; min-height: 50px; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 18px; justify-content: flex-end; }
+  .modal-actions button { padding: 7px 18px; border-radius: 8px; font-size: 13px; cursor: pointer; border: 1px solid #d8dee9; background: #fff; color: #3a4456; transition: all .15s; }
+  .modal-actions .btn-primary { background: #3b6fb0; color: #fff; border-color: #3b6fb0; }
+  .modal-actions .btn-primary:hover { background: #2d5a94; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div style="display:flex;align-items:center">
+      <div>
+        <div class="title">任务清单</div>
+        <div class="subtitle" id="subtitle"></div>
+      </div>
+      <button class="add-task-btn" onclick="openAddTask()">＋ 添加任务</button>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="stat-done">-</b><span>已完成</span></div>
+      <div class="stat"><b id="stat-pending">-</b><span>进行中</span></div>
+    </div>
+  </div>
+
+  <div class="filters" id="filters">
+    <button class="filter-btn active" data-filter="all">全部<span class="cnt" id="cnt-all"></span></button>
+    <button class="filter-btn" data-filter="done">已完成任务<span class="cnt" id="cnt-done"></span></button>
+    <button class="filter-btn" data-filter="todo">未完成任务<span class="cnt" id="cnt-todo"></span></button>
+    <button class="filter-btn" data-filter="high">高优先级<span class="cnt" id="cnt-high"></span></button>
+    <button class="filter-btn" data-filter="medium">中优先级<span class="cnt" id="cnt-medium"></span></button>
+    <button class="filter-btn" data-filter="low">低优先级<span class="cnt" id="cnt-low"></span></button>
+  </div>
+
+  <div class="grid" id="grid"></div>
+</div>
+
+<script>
+let TASKS = [];
+const EMBEDDED_TASKS = [{"no": "1", "name": "完成进度看板项目", "date": "2026/08/01", "yesterday": 70, "today": 100, "priority": "high", "finished": true, "completed_date": "2026/08/01", "category": "工程", "status": "已完成", "total_days": 0, "nodes": [{"phase": "创建", "date": "2026/08/01", "progress": 70, "days_from_prev": null}, {"phase": "推进", "date": "前日", "progress": 70, "days_from_prev": null}, {"phase": "完成", "date": "2026/08/01", "progress": 100, "days_from_prev": null}], "stalled": false, "json_backed": true}, {"no": "2", "name": "完成华为与hg仿真", "date": "2026/08/01", "yesterday": 46, "today": 100, "priority": "high", "finished": true, "completed_date": "2026/08/25", "category": "工程", "status": "已完成", "total_days": 24, "nodes": [{"phase": "创建", "date": "2026/08/01", "progress": 46, "days_from_prev": null}, {"phase": "推进", "date": "前日", "progress": 46, "days_from_prev": null}, {"phase": "完成", "date": "2026/08/25", "progress": 100, "days_from_prev": null}], "stalled": false, "json_backed": true}, {"no": "3", "name": "完成网络测量标准提纲", "date": "2026/08/01", "yesterday": 26, "today": 26, "priority": "high", "finished": false, "completed_date": "", "category": "标准", "status": "进行中", "total_days": 30, "nodes": [{"phase": "创建", "date": "2026/08/01", "progress": 26, "days_from_prev": null, "note": "开始编写网络测量标准提纲"}, {"phase": "当前", "date": "2026/08/31", "progress": 26, "days_from_prev": 30}], "stalled": false, "json_backed": true}, {"no": "4", "name": "完成AI综述论文编写", "date": "2026/08/03", "yesterday": 0, "today": 10, "priority": "medium", "finished": false, "completed_date": "", "category": "科研", "status": "进行中", "total_days": 28, "nodes": [{"phase": "创建", "date": "2026/08/03", "progress": 10, "days_from_prev": null, "note": "开始AI综述论文调研"}], "stalled": false, "json_backed": true}, {"no": "5", "name": "完成仿真论文编写", "date": "2026/08/03", "yesterday": 0, "today": 5, "priority": "medium", "finished": false, "completed_date": "", "category": "科研", "status": "进行中", "total_days": 28, "nodes": [{"phase": "创建", "date": "2026/08/03", "progress": 5, "days_from_prev": null, "note": "开始仿真论文编写"}], "stalled": false, "json_backed": true}, {"no": "6", "name": "完成测量专利编写", "date": "2026/08/03", "yesterday": 5, "today": 5, "priority": "high", "finished": false, "completed_date": "", "category": "专利", "status": "进行中", "total_days": 28, "nodes": [{"phase": "创建", "date": "2026/08/03", "progress": 5, "days_from_prev": null, "note": "开始测量专利编写"}, {"phase": "当前", "date": "2026/08/31", "progress": 5, "days_from_prev": 28}], "stalled": false, "json_backed": true}, {"no": "7", "name": "完成调优专利编写", "date": "2026/08/03", "yesterday": 1, "today": 1, "priority": "low", "finished": false, "completed_date": "", "category": "专利", "status": "进行中", "total_days": 28, "nodes": [{"phase": "创建", "date": "2026/08/03", "progress": 1, "days_from_prev": null, "note": "开始调优专利编写"}, {"phase": "当前", "date": "2026/08/31", "progress": 1, "days_from_prev": 28}], "stalled": false, "json_backed": true}, {"no": "8", "name": "完成AI跟踪SIGCOMM", "date": "2026/08/03", "yesterday": 5, "today": 100, "priority": "medium", "finished": true, "completed_date": "2026/08/03", "category": "科研", "status": "已完成", "total_days": 0, "nodes": [{"phase": "创建", "date": "2026/08/03", "progress": 5, "days_from_prev": null}, {"phase": "推进", "date": "前日", "progress": 5, "days_from_prev": null}, {"phase": "完成", "date": "2026/08/03", "progress": 100, "days_from_prev": null}], "stalled": false, "json_backed": true}, {"no": "9", "name": "完成电脑文件整理", "date": "2026/08/03", "yesterday": 30, "today": 35, "priority": "medium", "finished": false, "completed_date": "", "category": "个人", "status": "进行中", "total_days": 28, "nodes": [{"phase": "创建", "date": "2026/08/03", "progress": 30, "days_from_prev": null, "note": "开始整理电脑文件"}, {"phase": "推进", "date": "2026/08/31", "progress": 35, "days_from_prev": 28, "note": "持续整理中"}], "stalled": false, "json_backed": true}, {"no": "10", "name": "完成汽车保险购买", "date": "2026/08/03", "yesterday": 5, "today": 100, "priority": "high", "finished": true, "completed_date": "2026/08/03", "category": "个人", "status": "已完成", "total_days": 0, "nodes": [{"phase": "创建", "date": "2026/08/03", "progress": 5, "days_from_prev": null}, {"phase": "推进", "date": "前日", "progress": 5, "days_from_prev": null}, {"phase": "完成", "date": "2026/08/03", "progress": 100, "days_from_prev": null}], "stalled": false, "json_backed": true}, {"no": "11", "name": "搭建个人知识库(workbuddy/llm-wiki/obsidian)", "date": "2026/08/03", "yesterday": 85, "today": 100, "priority": "low", "finished": true, "completed_date": "2026/08/03", "category": "个人", "status": "已完成", "total_days": 0, "nodes": [{"phase": "创建", "date": "2026/08/03", "progress": 85, "days_from_prev": null}, {"phase": "推进", "date": "前日", "progress": 85, "days_from_prev": null}, {"phase": "完成", "date": "2026/08/03", "progress": 100, "days_from_prev": null}], "stalled": false, "json_backed": true}, {"no": "12", "name": "完成时变路由报告修改", "date": "2026/08/03", "yesterday": 0, "today": 60, "priority": "high", "finished": false, "completed_date": "", "category": "科研", "status": "进行中", "total_days": 28, "nodes": [{"phase": "创建", "date": "2026/08/03", "progress": 0, "days_from_prev": null, "note": "待修改时变路由报告"}, {"phase": "推进", "date": "2026/08/31", "progress": 60, "days_from_prev": 28, "note": "合并几家单位的稿件", "owner": "李佳伟"}], "stalled": false, "json_backed": true}, {"no": "13", "name": "预约医生线上复诊", "date": "2026/08/03", "yesterday": 100, "today": 100, "priority": "medium", "finished": true, "completed_date": "2026/08/03", "category": "个人", "status": "已完成", "total_days": 0, "nodes": [{"phase": "创建", "date": "2026/08/03", "progress": 100, "days_from_prev": null}, {"phase": "完成", "date": "2026/08/03", "progress": 100, "days_from_prev": 0}], "stalled": false, "json_backed": true}, {"no": "14", "name": "给博客绑定域名和公网ip", "date": "2026/08/03", "yesterday": 100, "today": 100, "priority": "low", "finished": true, "completed_date": "2026/08/03", "category": "个人", "status": "已完成", "total_days": 0, "nodes": [{"phase": "创建", "date": "2026/08/03", "progress": 100, "days_from_prev": null}, {"phase": "完成", "date": "2026/08/03", "progress": 100, "days_from_prev": 0}], "stalled": false, "json_backed": true}, {"no": "15", "name": "修改paypal密码", "date": "2026/08/04", "yesterday": 100, "today": 100, "priority": "medium", "finished": true, "completed_date": "2026/08/04", "category": "个人", "status": "已完成", "total_days": 0, "nodes": [{"phase": "创建", "date": "2026/08/04", "progress": 100, "days_from_prev": null}, {"phase": "完成", "date": "2026/08/04", "progress": 100, "days_from_prev": 0}], "stalled": false, "json_backed": true}, {"no": "16", "name": "完成bgp blockchain专利编写", "date": "2026/08/04", "yesterday": 0, "today": 0, "priority": "low", "finished": false, "completed_date": "", "category": "专利", "status": "未开始", "total_days": 27, "nodes": [{"phase": "创建", "date": "2026/08/04", "progress": 0, "days_from_prev": null, "note": "待编写BGP Blockchain专利"}], "stalled": false, "json_backed": true}, {"no": "17", "name": "完成以前的论文修改并投稿", "date": "2026/08/04", "yesterday": 0, "today": 0, "priority": "medium", "finished": false, "completed_date": "", "category": "科研", "status": "未开始", "total_days": 27, "nodes": [{"phase": "创建", "date": "2026/08/04", "progress": 0, "days_from_prev": null, "note": "待修改旧论文并投稿"}], "stalled": false, "json_backed": true}, {"no": "18", "name": "完成旧博客文章的导入", "date": "2026/08/04", "yesterday": 100, "today": 100, "priority": "low", "finished": true, "completed_date": "2026/08/04", "category": "个人", "status": "已完成", "total_days": 0, "nodes": [{"phase": "创建", "date": "2026/08/04", "progress": 100, "days_from_prev": null}, {"phase": "完成", "date": "2026/08/04", "progress": 100, "days_from_prev": 0}], "stalled": false, "json_backed": true}, {"no": "19", "name": "完成百度网盘数据迁移", "date": "2026/08/05", "yesterday": 100, "today": 100, "priority": "low", "finished": true, "completed_date": "2026/08/05", "category": "个人", "status": "已完成", "total_days": 0, "nodes": [{"phase": "创建", "date": "2026/08/05", "progress": 100, "days_from_prev": null}, {"phase": "完成", "date": "2026/08/05", "progress": 100, "days_from_prev": 0}], "stalled": false, "json_backed": true}, {"no": "20", "name": "完成2台旧电脑改造", "date": "2026/08/06", "yesterday": 0, "today": 50, "priority": "medium", "finished": false, "completed_date": "", "category": "个人", "status": "进行中", "total_days": 25, "nodes": [{"phase": "创建", "date": "2026/08/06", "progress": 0, "days_from_prev": null, "note": "开始改造旧电脑"}, {"phase": "推进", "date": "2026/08/31", "progress": 50, "days_from_prev": 25, "note": "改造进行中"}], "stalled": false, "json_backed": true}, {"no": "21", "name": "推进CCSA行标与华为开会", "date": "2026/08/14", "yesterday": 100, "today": 100, "priority": "high", "finished": true, "completed_date": "2026/08/14", "category": "标准", "status": "已完成", "total_days": 0, "nodes": [{"phase": "创建", "date": "2026/08/14", "progress": 100, "days_from_prev": null}, {"phase": "完成", "date": "2026/08/14", "progress": 100, "days_from_prev": 0}], "stalled": false, "json_backed": true}, {"no": "22", "name": "完成流程设计的业务单元梳理", "date": "2026/08/20", "yesterday": 100, "today": 100, "priority": "high", "finished": true, "completed_date": "2026/08/20", "category": "工程", "status": "已完成", "total_days": 0, "nodes": [{"phase": "创建", "date": "2026/08/20", "progress": 100, "days_from_prev": null}, {"phase": "完成", "date": "2026/08/20", "progress": 100, "days_from_prev": 0}], "stalled": false, "json_backed": true}, {"no": "23", "name": "研究AI做PPT", "date": "2026/08/21", "yesterday": 50, "today": 50, "priority": "low", "finished": false, "completed_date": "", "category": "个人", "status": "进行中", "total_days": 10, "nodes": [{"phase": "创建", "date": "2026/08/21", "progress": 50, "days_from_prev": null, "note": "开始研究AI做PPT方案"}, {"phase": "当前", "date": "2026/08/31", "progress": 50, "days_from_prev": 10}], "stalled": false, "json_backed": true}, {"no": "24", "name": "做个任务看板", "date": "2026/08/22", "yesterday": 100, "today": 100, "priority": "low", "finished": true, "completed_date": "2026/08/22", "category": "工程", "status": "已完成", "total_days": 0, "nodes": [{"phase": "创建", "date": "2026/08/22", "progress": 100, "days_from_prev": null}, {"phase": "完成", "date": "2026/08/22", "progress": 100, "days_from_prev": 0}], "stalled": false, "json_backed": true}, {"no": "25", "name": "用AI-Agent处理论文邮件订阅", "date": "2026/08/22", "yesterday": 100, "today": 100, "priority": "low", "finished": true, "completed_date": "2026/08/22", "category": "科研", "status": "已完成", "total_days": 0, "nodes": [{"phase": "创建", "date": "2026/08/22", "progress": 100, "days_from_prev": null}, {"phase": "完成", "date": "2026/08/22", "progress": 100, "days_from_prev": 0}], "stalled": false, "json_backed": true}, {"no": "26", "name": "让qoder优化仿真工具可视化页面", "date": "2026/08/26", "yesterday": 0, "today": 0, "priority": "low", "finished": false, "completed_date": "", "category": "工程", "status": "未开始", "total_days": 5, "nodes": [{"phase": "创建", "date": "2026/08/26", "progress": 0, "days_from_prev": null, "note": "待让qoder优化仿真工具可视化页面"}], "stalled": false, "json_backed": true}, {"no": "27", "name": "创建微信公众号文章发布skill", "date": "2026/08/26", "yesterday": 100, "today": 100, "priority": "low", "finished": true, "completed_date": "2026/08/27", "category": "个人", "status": "已完成", "total_days": 1, "nodes": [{"phase": "创建", "date": "2026/08/26", "progress": 100, "days_from_prev": null}, {"phase": "完成", "date": "2026/08/27", "progress": 100, "days_from_prev": 1}], "stalled": false, "json_backed": true}, {"no": "28", "name": "看完2026年一三专项指南", "date": "2026/08/27", "yesterday": 100, "today": 100, "priority": "low", "finished": true, "completed_date": "2026/08/28", "category": "科研", "status": "已完成", "total_days": 1, "nodes": [{"phase": "创建", "date": "2026/08/27", "progress": 100, "days_from_prev": null}, {"phase": "完成", "date": "2026/08/28", "progress": 100, "days_from_prev": 1}], "stalled": false, "json_backed": true}, {"no": "29", "name": "开发一个流程优化的小程序", "date": "2026/08/28", "yesterday": 100, "today": 100, "priority": "high", "finished": true, "completed_date": "2026/08/28", "category": "工程", "status": "已完成", "total_days": 0, "nodes": [{"phase": "创建", "date": "2026/08/28", "progress": 100, "days_from_prev": null}, {"phase": "完成", "date": "2026/08/28", "progress": 100, "days_from_prev": 0}], "stalled": false, "json_backed": true}, {"no": "30", "name": "完善reTerminal项目补充任务推进树状图记录", "date": "2026/08/31", "yesterday": 0, "today": 100, "priority": "low", "finished": true, "completed_date": "2026/08/31", "category": "工程", "status": "已完成", "total_days": 0, "nodes": [{"phase": "创建", "date": "2026/08/31", "progress": 0, "days_from_prev": null, "note": "待完善reTerminal项目任务推进树状图记录"}, {"phase": "完成", "date": "2026/08/31", "progress": 100, "days_from_prev": 0, "note": "一键完成"}], "stalled": false, "json_backed": true}];
+
+const PRIORITY = {
+  high: { label: '高优先级', color: '#d6453d', bg: '#fdeceb' },
+  medium: { label: '中优先级', color: '#3b6fb0', bg: '#e8eef8' },
+  low: { label: '低优先级', color: '#2e9e5b', bg: '#e7f4ec' },
+};
+const PRIO_ORDER = { high: 0, medium: 1, low: 2 };
+
+// 任务创建时间转可比较数值 (YYYY/MM/DD)
+function dateVal(t) {
+  const m = String(t.date || '').match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  return m ? (+m[1]) * 10000 + (+m[2]) * 100 + (+m[3]) : 0;
+}
+
+// 解析 YYYY/MM/DD 为本地日期
+function parseDate(s) {
+  const m = String(s || '').match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+}
+
+// 任务执行时间(天): 已完成=创建日→完成日, 未完成=创建日→今天
+function execDays(t) {
+  const start = parseDate(t.date);
+  if (!start) return null;
+  if (t.finished) {
+    const end = parseDate(t.completed_date);
+    if (!end) return null;
+    return Math.round((end - start) / 86400000) + 1;
+  } else {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.round((today - start) / 86400000);
+  }
+}
+
+function matches(t, f) {
+  switch (f) {
+    case 'all': return true;
+    case 'done': return t.finished;
+    case 'todo': return !t.finished;
+    case 'high': return t.priority === 'high' && !t.finished;
+    case 'medium': return t.priority === 'medium' && !t.finished;
+    case 'low': return t.priority === 'low' && !t.finished;
+    default: return true;
+  }
+}
+
+function render(filter) {
+  const grid = document.getElementById('grid');
+  if (!grid) return;
+  const list = TASKS.filter(t => matches(t, filter));
+  // 排序: 高 → 中 → 低优先级; "全部"标签下未完成任务在前
+  list.sort((a, b) => {
+    // 高/中/低优先级标签: 只显示未完成任务, 按创建时间(升序)排序
+    if (filter === 'high' || filter === 'medium' || filter === 'low') {
+      return dateVal(a) - dateVal(b);
+    }
+    const pa = PRIO_ORDER[a.priority] != null ? PRIO_ORDER[a.priority] : 1;
+    const pb = PRIO_ORDER[b.priority] != null ? PRIO_ORDER[b.priority] : 1;
+    if (pa !== pb) return pa - pb;
+    if (filter === 'all' && a.finished !== b.finished) return a.finished ? 1 : -1;
+    return (Number(a.no) || 0) - (Number(b.no) || 0);
+  });
+  if (!list.length) {
+    grid.innerHTML = '<div class="empty">该筛选下暂无任务</div>';
+    return;
+  }
+  grid.innerHTML = list.map(t => {
+    const p = PRIORITY[t.priority] || PRIORITY.medium;
+    const days = execDays(t);
+    const status = t.finished
+      ? '<span class="meta-done">✓ 已完成' + (t.completed_date ? ' · ' + t.completed_date : '') + '</span>'
+      : '<span>进行中</span>';
+    const timeInfo = days != null
+      ? '<span class="meta-time">' + (t.finished ? '执行时间：' + days + ' 天' : (days === 0 ? '今天创建' : '已进行 ' + days + ' 天')) + '</span>'
+      : '';
+    return `
+      <div class="card ${t.finished ? 'done' : 'todo'}">
+        <div class="card-head">
+          <div>
+            <div class="card-no">No.${t.no} · 创建于 ${t.date}</div>
+            <div class="card-name">${t.name}</div>
+          </div>
+          <span class="badge" style="color:${p.color};background:${p.bg}">${p.label}</span>
+        </div>
+        <div class="progress-row">
+          <div class="bar"><div class="bar-fill" style="width:${t.today}%;background:${p.color}"></div></div>
+          <span class="bar-pct">${t.today}%</span>
+        </div>
+        <div class="card-meta">${status}${timeInfo}
+          <a class="flow-link" href="task_flow.html?task=${t.no}" title="查看流程树">🌳</a>
+                    ${!t.finished ? '<button class="done-task" title="一键完成" onclick="completeTask(\'' + t.no + '\')">✅</button>' : ''}
+          <button class="del-task" title="删除任务" onclick="deleteTask('${t.no}','${t.name.replace(/'/g, "\'")}')">🗑️</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function init() {
+  const filtersEl = document.getElementById('filters');
+  if (!filtersEl) return;
+  filtersEl.addEventListener('click', e => {
+    const btn = e.target.closest('.filter-btn');
+    if (!btn) return;
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    render(btn.dataset.filter);
+  });
+  // 动态加载数据
+  loadData();
+}
+
+function loadData() {
+  fetch('/api/tasks').then(r => r.json()).then(data => {
+    TASKS = data;
+    updateStats();
+    render('all');
+  }).catch(() => {
+    TASKS = EMBEDDED_TASKS;
+    updateStats();
+    render('all');
+  });
+}
+
+function updateStats() {
+  const total = TASKS.length;
+  const done = TASKS.filter(t => t.finished).length;
+  const pending = total - done;
+  const high = TASKS.filter(t => t.priority === 'high' && !t.finished).length;
+  const medium = TASKS.filter(t => t.priority === 'medium' && !t.finished).length;
+  const low = TASKS.filter(t => t.priority === 'low' && !t.finished).length;
+  const sub = document.getElementById('subtitle');
+  if (sub) sub.textContent = '共 ' + total + ' 个任务 · 已完成 ' + done + ' · 进行中 ' + pending;
+  const sd = document.getElementById('stat-done');
+  if (sd) sd.textContent = done;
+  const sp = document.getElementById('stat-pending');
+  if (sp) sp.textContent = pending;
+  const ids = { all: total, done: done, todo: pending, high: high, medium: medium, low: low };
+  for (const [k, v] of Object.entries(ids)) {
+    const el = document.getElementById('cnt-' + k);
+    if (el) el.textContent = v;
+  }
+}
+
+// 添加任务弹窗
+function openAddTask() {
+  document.getElementById('task-name').value = '';
+  document.getElementById('task-priority').value = 'medium';
+  document.getElementById('task-category').value = '个人';
+  document.getElementById('task-progress').value = '0';
+  document.getElementById('task-note').value = '';
+  document.getElementById('add-modal-bg').classList.remove('hide');
+}
+function closeAddModal() {
+  document.getElementById('add-modal-bg').classList.add('hide');
+}
+function submitTask() {
+  const name = document.getElementById('task-name').value.trim();
+  const priority = document.getElementById('task-priority').value;
+  const category = document.getElementById('task-category').value;
+  const today = parseInt(document.getElementById('task-progress').value) || 0;
+  const note = document.getElementById('task-note').value.trim();
+  if (!name) { alert('请填写任务名称'); return; }
+  fetch('/api/add_task', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name, priority, category, today, note})
+  }).then(r => r.json()).then(data => {
+    if (data.ok) { location.reload(); }
+    else { alert(data.error || '添加失败'); }
+  }).catch(() => alert('连接服务器失败，请确认已启动 serve_task_flow.py'));
+}
+document.addEventListener('click', e => {
+  if (e.target.id === 'add-modal-bg') closeAddModal();
+});
+
+// 一键完成任务
+function completeTask(no) {
+  if (!confirm('确认将任务 No.' + no + ' 标记为已完成？')) return;
+  fetch('/api/complete_task', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({no})
+  }).then(r => r.json()).then(data => {
+    if (data.ok) { location.reload(); }
+    else { alert(data.error || '操作失败'); }
+  }).catch(() => alert('连接服务器失败'));
+}
+
+// 删除任务
+function deleteTask(no, name) {
+  if (!confirm('确认删除任务 No.' + no + ' ' + name + '？\n\n该操作将同时删除 CSV 和流程树数据，不可恢复。')) return;
+  fetch('/api/delete_task', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({no})
+  }).then(r => r.json()).then(data => {
+    if (data.ok) { location.reload(); }
+    else { alert(data.error || '删除失败'); }
+  }).catch(() => alert('连接服务器失败'));
+}
+
+// 等 DOM 就绪再初始化, 避免元素未加载时出现空引用
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+</script>
+
+<!-- 添加任务弹窗 -->
+<div id="add-modal-bg" class="modal-bg hide">
+  <div class="modal">
+    <h3>＋ 添加新任务</h3>
+    <label>任务名称</label>
+    <input type="text" id="task-name" placeholder="如：完成XX论文编写">
+    <label>优先级</label>
+    <select id="task-priority">
+      <option value="high">高优先级</option>
+      <option value="medium" selected>中优先级</option>
+      <option value="low">低优先级</option>
+    </select>
+    <label>分类</label>
+    <select id="task-category">
+      <option value="科研">科研</option>
+      <option value="工程">工程</option>
+      <option value="标准">标准</option>
+      <option value="专利">专利</option>
+      <option value="个人" selected>个人</option>
+    </select>
+    <label>初始进度 (%)</label>
+    <input type="number" id="task-progress" min="0" max="100" value="0" placeholder="0-100">
+    <label>备注</label>
+    <textarea id="task-note" placeholder="可选，记录任务说明"></textarea>
+    <div class="modal-actions">
+      <button onclick="closeAddModal()">取消</button>
+      <button class="btn-primary" onclick="submitTask()">确认添加</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

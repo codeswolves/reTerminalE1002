@@ -1,8 +1,8 @@
 # reTerminal E-Ink Dashboard
 
-一个为 [Seeed Studio reTerminal](https://wiki.seeedstudio.com/reTerminal/) + E1002 5" 墨水屏设计的个人仪表盘生成器。读取 CSV 数据源，生成 800x480 的 HTML 看板，可截图后推送到墨水屏显示。
+一个为 [Seeed Studio reTerminal](https://wiki.seeedstudio.com/reTerminal/) + E1002 5" 墨水屏设计的个人仪表盘生成器。读取数据源（CSV + JSON），生成 800x480 的 HTML 看板，可截图后推送到墨水屏显示。
 
-**在线预览**：[codeswolves.github.io/reTerminalE1002](https://codeswolves.github.io/reTerminalE1002/output/dashboard.html)
+**在线预览**：[codeswolves.github.io/reTerminalE1002](https://codeswolves.github.io/reTerminalE1002/output/dashboard/dashboard.html)
 
 ## 功能概览
 
@@ -13,28 +13,45 @@
 - **9 套主题风格**：一键换肤
 - **全流水线**：生成 HTML → 截图 PNG → 推送墨水屏
 - **任务清单可视化**：完成状态/优先级筛选 + 优先级排序 + 执行时间统计
+- **任务流程跟踪树**：可视化每个任务的推进节点、耗时、负责人，支持交互式增删改节点
 
 ## 项目结构
 
 ```
 reTerminal/
-├── data/                    # 数据源（CSV）
-│   ├── weight.csv           # 体重记录
-│   ├── fitness.csv          # 健身打卡（含 yesterday/today 双段数据）
-│   ├── tasks.csv            # 每日任务进度
-│   └── goals.csv            # 论文/专利目标进度
-├── output/                  # 生成结果
-│   ├── dashboard.html       # 默认看板
-│   ├── dashboard_<style>.html  # 各主题独立文件（--all 生成）
-│   └── tasks_view.html      # 任务清单可视化筛选页面
-├── src/                     # 全部代码
-│   ├── generate_dashboard.py    # HTML 生成器（核心）
-│   ├── generate_tasks_view.py   # 任务清单可视化筛选页生成器
-│   ├── render_screenshot.py     # HTML → PNG 截图工具
-│   ├── display_on_eink.py       # PNG → 墨水屏显示工具
-│   ├── run_daily.py             # 一键流水线（生成+截图+显示）
-│   ├── refresh_csv.py           # 每日刷新 CSV 进度数据
-│   └── setup_reterminal.sh      # reTerminal 设备端安装脚本
+├── data/                        # 数据源
+│   ├── weight.csv               # 体重记录
+│   ├── fitness.csv              # 健身打卡（含 yesterday/today 双段数据）
+│   ├── task_flows.json          # 任务流程数据（含元数据 + 流程节点）
+│   ├── goals.csv                # 论文/专利目标进度
+│   └── slogan.csv               # 口号记录
+├── output/                      # 生成结果
+│   ├── dashboard/               # 看板 HTML
+│   │   ├── dashboard.html       # 默认看板
+│   │   └── dashboard_<style>.html  # 各主题独立文件（--all 生成）
+│   ├── screenshots/             # PNG 截图
+│   │   └── dashboard.png
+│   └── tasks/                   # 任务相关页面
+│       ├── tasks_view.html      # 任务清单可视化筛选页面
+│       └── task_flow.html       # 任务流程跟踪树页面
+├── src/                         # 全部代码
+│   ├── generators/              # HTML 生成器
+│   │   ├── generate_dashboard.py    # 仪表盘 HTML 生成器（核心）
+│   │   ├── generate_tasks_view.py   # 任务清单可视化页生成器
+│   │   └── generate_task_flow.py    # 任务流程跟踪树页生成器（含数据层）
+│   ├── utils/                   # 工具脚本
+│   │   ├── serve_task_flow.py       # 任务页面 HTTP 服务器（静态文件 + REST API）
+│   │   ├── render_screenshot.py     # HTML → PNG 截图工具
+│   │   ├── embed_cjk_font.py        # 中文字体子集嵌入工具
+│   │   └── display_on_eink.py       # PNG → 墨水屏显示工具
+│   ├── pipeline/                # 流水线
+│   │   ├── run_daily.py             # 一键流水线（生成+截图+显示）
+│   │   └── refresh_csv.py           # 每日刷新 CSV 进度数据
+│   └── setup/                   # 设备部署
+│       └── setup_reterminal.sh      # reTerminal 设备端安装脚本
+├── docs/                        # 文档
+│   ├── design/                  # 设计文档
+│   └── notes/                   # 技术笔记
 └── requirements.txt
 ```
 
@@ -60,30 +77,30 @@ pip install Pillow
 ### 2. 生成看板
 
 ```bash
-# 生成默认风格（输出到 output/dashboard.html）
-python src/generate_dashboard.py
+# 生成默认风格（输出到 output/dashboard/dashboard.html）
+python src/generators/generate_dashboard.py
 
 # 指定日期
-python src/generate_dashboard.py --date 2026-08-01
+python src/generators/generate_dashboard.py --date 2026-08-01
 
 # 生成后自动打开浏览器预览
-python src/generate_dashboard.py --open
+python src/generators/generate_dashboard.py --open
 
 # 生成指定主题
-python src/generate_dashboard.py --style cyberpunk
+python src/generators/generate_dashboard.py --style cyberpunk
 
 # 一次性生成所有 9 套主题到独立文件
-python src/generate_dashboard.py --all
+python src/generators/generate_dashboard.py --all
 ```
 
 ### 3. 生成任务清单可视化页
 
 ```bash
-# 生成 output/tasks_view.html（数据内嵌，双击即用）
-python src/generate_tasks_view.py
+# 生成 output/tasks/tasks_view.html（数据内嵌，双击即用）
+python src/generators/generate_tasks_view.py
 
 # 生成后自动打开浏览器
-python src/generate_tasks_view.py --open
+python src/generators/generate_tasks_view.py --open
 ```
 
 页面顶部提供筛选按钮：全部 / 已完成任务 / 未完成任务 / 高优先级 / 中优先级 / 低优先级。
@@ -95,37 +112,73 @@ python src/generate_tasks_view.py --open
 - **优先级标签**：高/中/低优先级仅显示未完成任务，并按创建时间排序（按钮计数同步为未完成数）
 - **执行时间**：每张卡片显示任务执行时间——已完成任务显示 `执行时间：N 天`（创建日 → 完成日），未完成任务显示 `已进行 N 天`（创建日 → 今天，随日期自动更新）
 
+### 3.5 任务流程跟踪树 & 本地服务器
+
+任务流程跟踪树页面（`task_flow.html`）可视化每个任务的推进节点、耗时和负责人。需要通过本地服务器访问（支持交互式增删改节点）：
+
+```bash
+# 先生成页面
+python src/generators/generate_task_flow.py
+python src/generators/generate_tasks_view.py
+
+# 启动本地服务器（默认端口 8080）
+python src/utils/serve_task_flow.py --port 8080
+
+# 浏览器访问
+# http://localhost:8080/tasks_view.html   任务清单
+# http://localhost:8080/task_flow.html    流程跟踪树
+```
+
+服务器提供 REST API，支持以下操作：
+
+| 接口 | 功能 |
+|------|------|
+| `GET /api/tasks` | 获取所有任务（含计算字段） |
+| `POST /api/add_node` | 添加流程节点 |
+| `POST /api/edit_node` | 编辑节点 |
+| `POST /api/delete_node` | 删除节点 |
+| `POST /api/add_task` | 添加新任务 |
+| `POST /api/delete_task` | 删除任务 |
+| `POST /api/complete_task` | 一键完成任务 |
+
+页面特性：
+
+- **统计动态计算**：统计数字由 JS 从 API 数据实时计算，增删任务后刷新即同步
+- **跨页面导航**：tasks_view 每张卡片有 🌳 按钮跳转到 task_flow 对应任务
+- **一键完成**：未完成任务卡片有 ✅ 按钮，点击即标记为完成
+- **流程节点管理**：支持添加/编辑/删除节点，弹窗表单填写阶段、日期、进度、负责人、备注
+
 ### 4. 截图为 PNG
 
 ```bash
-# 将 output/dashboard.html 截图为 output/dashboard.png（800x480）
-python src/render_screenshot.py
+# 将 output/dashboard/dashboard.html 截图为 output/screenshots/dashboard.png（800x480）
+python src/utils/render_screenshot.py
 ```
 
 ### 5. 显示到墨水屏（仅 reTerminal 设备）
 
 ```bash
-# 将 output/dashboard.png 推送到墨水屏
-python src/display_on_eink.py
+# 将 output/screenshots/dashboard.png 推送到墨水屏
+python src/utils/display_on_eink.py
 
 # 清屏（全白）
-python src/display_on_eink.py --clear
+python src/utils/display_on_eink.py --clear
 ```
 
 ### 6. 一键流水线
 
 ```bash
 # 默认流程：生成 HTML → 截图 PNG（不推送墨水屏）
-python src/run_daily.py
+python src/pipeline/run_daily.py
 
 # 指定主题风格（默认 light）
-python src/run_daily.py --style cyberpunk
+python src/pipeline/run_daily.py --style cyberpunk
 
 # 完整流程：生成 HTML → 截图 PNG → 推送墨水屏（需在 reTerminal 上运行）
-python src/run_daily.py --display
+python src/pipeline/run_daily.py --display
 
 # 只生成 HTML，不截图不显示
-python src/run_daily.py --no-screenshot
+python src/pipeline/run_daily.py --no-screenshot
 ```
 
 ## 主题风格
@@ -146,13 +199,13 @@ python src/run_daily.py --no-screenshot
 
 ```bash
 # 预览所有风格（生成独立文件后用浏览器打开）
-python src/generate_dashboard.py --all
-# 然后访问 output/dashboard_<style>.html
+python src/generators/generate_dashboard.py --all
+# 然后访问 output/dashboard/dashboard_<style>.html
 ```
 
 ## CLI 参数详解
 
-### `generate_dashboard.py`
+### `src/generators/generate_dashboard.py`
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
@@ -161,30 +214,42 @@ python src/generate_dashboard.py --all
 | `--all` | 循环生成所有主题到独立文件 | 关闭 |
 | `--open` | 生成后打开浏览器预览 | 关闭 |
 
-### `generate_tasks_view.py`
+### `src/generators/generate_tasks_view.py`
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
 | `--open` | 生成后打开浏览器预览 | 关闭 |
 
-### `render_screenshot.py`
+### `src/generators/generate_task_flow.py`
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
-| `--html <路径>` | 输入 HTML 文件 | `output/dashboard.html` |
-| `--output <路径>` | 输出 PNG 路径 | `output/dashboard.png` |
+| `--open` | 生成后打开浏览器预览 | 关闭 |
+
+### `src/utils/serve_task_flow.py`
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--port <端口>` | HTTP 服务器端口 | `8080` |
+
+### `src/utils/render_screenshot.py`
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--html <路径>` | 输入 HTML 文件 | `output/dashboard/dashboard.html` |
+| `--output <路径>` | 输出 PNG 路径 | `output/screenshots/dashboard.png` |
 | `--width <像素>` | 视口宽度 | `800` |
 | `--height <像素>` | 视口高度 | `480` |
 
-### `display_on_eink.py`
+### `src/utils/display_on_eink.py`
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
-| `--image <路径>` | 输入 PNG 图片 | `output/dashboard.png` |
+| `--image <路径>` | 输入 PNG 图片 | `output/screenshots/dashboard.png` |
 | `--clear` | 清屏（全白） | 关闭 |
 | `--simple` | 简易 framebuffer 模式 | 关闭 |
 
-### `run_daily.py`
+### `src/pipeline/run_daily.py`
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
@@ -205,7 +270,7 @@ date,weight
 2026-08-01,89.8
 ```
 
-减重目标默认为 **40 斤**（20kg），从首条记录的起始体重计算进度。修改 `src/generate_dashboard.py` 中 `get_weight_info` 的 `target_loss = 40.0` 可调整目标。
+减重目标默认为 **40 斤**（20kg），从首条记录的起始体重计算进度。修改 `src/generators/generate_dashboard.py` 中 `get_weight_info` 的 `target_loss = 40.0` 可调整目标。
 
 ### `data/fitness.csv`
 
@@ -220,22 +285,32 @@ date,checkin,content,yesterday,today
 - `checkin`：`1` = 打卡，`0` = 未打卡
 - `yesterday`/`today`：`0.0` ~ `1.0`，表示完成比例
 
-### `data/tasks.csv`
+### `data/task_flows.json`
 
-每日任务进度，最多展示 3 条。
+任务流程数据（单一 JSON 文件），包含任务元数据和流程节点。仪表盘和任务页面均从此文件读取。
 
-```csv
-No.,date,task_name,yesterday progress,today progress,priority,finished,completed date
-1,2026/08/01,完成进度看板项目,70,100,high,yes,2026/08/01
-2,2026/08/01,完成华为与hg仿真,49,46,high,no,
+```json
+{
+  "no": "1",
+  "name": "完成进度看板项目",
+  "date": "2026/08/01",
+  "priority": "high",
+  "category": "工程",
+  "nodes": [
+    {"phase": "创建", "date": "2026/08/01", "progress": 70, "note": ""},
+    {"phase": "完成", "date": "2026/08/01", "progress": 100, "note": "", "owner": "张三"}
+  ]
+}
 ```
 
-- `No.`：任务编号（唯一，可视化页按此去重取最新记录）
+- `no`：任务编号（字符串，自增）
+- `name`：任务名称
 - `date`：创建日期（`YYYY/MM/DD`）
-- `yesterday progress` / `today progress`：昨天完成度 / 今天进度（0~100）
 - `priority`：`high` / `medium` / `low`
-- `finished`：`yes` / `no`
-- `completed date`：完成日期（`YYYY/MM/DD`，未完成留空）。用 `refresh_csv.py` 更新任务时，进度达到 100 会自动写入当天日期
+- `category`：任务分类（`科研` / `工程` / `标准` / `专利` / `个人`）
+- `nodes`：流程节点列表，每个节点包含 `phase`（阶段）、`date`、`progress`（0~100）、`note`（可选）、`owner`（可选）
+
+派生字段（由 `read_tasks()` 计算，不存储在 JSON 中）：`finished`、`status`、`total_days`、`stalled`、`days_from_prev`
 
 ### `data/goals.csv`
 
@@ -254,8 +329,8 @@ patent,3,1
 在 reTerminal 上执行：
 
 ```bash
-chmod +x src/setup_reterminal.sh
-./src/setup_reterminal.sh
+chmod +x src/setup/setup_reterminal.sh
+./src/setup/setup_reterminal.sh
 ```
 
 安装脚本会：
@@ -281,7 +356,7 @@ cat /tmp/dashboard_cron.log
 ```bash
 crontab -e
 # 改为每天早上 8:00
-0 8 * * * cd /home/pi/reTerminal && python3 src/run_daily.py >> /tmp/dashboard_cron.log 2>&1
+0 8 * * * cd /home/pi/reTerminal && python3 src/pipeline/run_daily.py >> /tmp/dashboard_cron.log 2>&1
 ```
 
 ## 在开发机上预览
@@ -289,14 +364,21 @@ crontab -e
 无需 reTerminal 设备，普通电脑也可生成和预览：
 
 ```bash
-# 启动本地 HTTP 服务器
+# 方式一：简单静态文件服务器（仅查看，不支持交互 API）
 cd reTerminal/output
 python -m http.server 8080
 
 # 浏览器访问
-# http://localhost:8080/dashboard.html          默认主题
-# http://localhost:8080/dashboard_cyberpunk.html 赛博朋克
-# http://localhost:8080/dashboard_light.html     浅色
+# http://localhost:8080/dashboard/dashboard.html          默认主题
+# http://localhost:8080/dashboard/dashboard_cyberpunk.html 赛博朋克
+# http://localhost:8080/dashboard/dashboard_light.html     浅色
+
+# 方式二：任务页面专用服务器（支持增删改 API）
+python src/utils/serve_task_flow.py --port 8080
+
+# 浏览器访问
+# http://localhost:8080/tasks_view.html   任务清单
+# http://localhost:8080/task_flow.html    流程跟踪树
 ```
 
 ## 技术细节

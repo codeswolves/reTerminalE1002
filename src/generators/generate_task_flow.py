@@ -1,0 +1,832 @@
+"""
+generate_task_flow.py
+生成任务推进流程跟踪树状图页面 (HTML)。
+
+功能:
+    读取 data/task_flows.json, 为每个任务生成独立的流程树,
+    按分类 (category) 分组展示, 输出到 output/tasks/task_flow.html。
+    页面顶部提供统计概览与筛选按钮, 底部提供复盘分析。
+
+用法:
+    python3 src/generators/generate_task_flow.py            # 生成页面
+    python3 src/generators/generate_task_flow.py --open     # 生成后打开浏览器
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+import webbrowser
+from datetime import date
+
+# ----------------------------------------------------------------------------
+# 路径
+# ----------------------------------------------------------------------------
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+OUT_DIR = os.path.join(BASE_DIR, "output", "tasks")
+os.makedirs(OUT_DIR, exist_ok=True)
+OUT_HTML = os.path.join(OUT_DIR, "task_flow.html")
+TASK_FLOWS_JSON = os.path.join(DATA_DIR, "task_flows.json")
+
+TODAY_STR = date.today().strftime("%Y/%m/%d")
+
+# ----------------------------------------------------------------------------
+# 元数据
+# ----------------------------------------------------------------------------
+CATEGORY_ORDER = ["科研", "工程", "标准", "专利", "个人"]
+CATEGORY_ICON = {"科研": "🔬", "工程": "🔧", "标准": "📐", "专利": "💡", "个人": "👤"}
+
+STATUS_ORDER = ["未开始", "进行中", "已完成", "已暂停", "已取消"]
+STATUS_META = {
+    "未开始": {"icon": "○", "color": "#8893a7"},
+    "进行中": {"icon": "⏳", "color": "#d29922"},
+    "已完成": {"icon": "✅", "color": "#2e9e5b"},
+    "已暂停": {"icon": "⏸️", "color": "#7c6bc4"},
+    "已取消": {"icon": "❌", "color": "#999999"},
+}
+
+PRIORITY_META = {
+    "high": ("高", "#d6453d"),
+    "medium": ("中", "#3b6fb0"),
+    "low": ("低", "#2e9e5b"),
+}
+
+
+# ----------------------------------------------------------------------------
+# 数据读取
+# ----------------------------------------------------------------------------
+def parse_date(s):
+    """解析 YYYY/MM/DD 为 date 对象。"""
+    m = re.match(r"(\d{4})/(\d{1,2})/(\d{1,2})", (s or "").strip())
+    if m:
+        return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    return None
+
+
+def read_tasks_raw():
+    """读取 task_flows.json 原始数据（不含计算字段）。"""
+    if not os.path.exists(TASK_FLOWS_JSON):
+        return []
+    with open(TASK_FLOWS_JSON, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def write_tasks_raw(tasks):
+    """写入 task_flows.json。"""
+    with open(TASK_FLOWS_JSON, "w", encoding="utf-8") as f:
+        json.dump(tasks, f, ensure_ascii=False, indent=2)
+
+
+def read_tasks():
+    """读取 task_flows.json, 返回任务 dict 列表（含计算字段和流程节点）。"""
+    raw = read_tasks_raw()
+    if not raw:
+        print(f"[错误] {TASK_FLOWS_JSON} 中没有任务数据")
+        sys.exit(1)
+
+    tasks = []
+    for item in raw:
+        task_no = str(item.get("no", ""))
+        name = (item.get("name") or "").strip()
+        date_str = (item.get("date") or "").strip()
+        priority = (item.get("priority") or "medium").strip().lower()
+        category = (item.get("category") or "个人").strip()
+        nodes_raw = item.get("nodes", [])
+
+        create_d = parse_date(date_str)
+
+        # 从节点推导完成状态
+        finished = False
+        completed_date = ""
+        if nodes_raw:
+            last = nodes_raw[-1]
+            if last.get("progress", 0) >= 100 and last.get("phase") in ("完成", "推进"):
+                finished = True
+                completed_date = last.get("date", "")
+
+        today_prog = nodes_raw[-1]["progress"] if nodes_raw else 0
+        yesterday_prog = nodes_raw[-2]["progress"] if len(nodes_raw) >= 2 else 0
+
+        status = (item.get("status") or "").strip()
+        if not status:
+            status = "已完成" if finished else ("未开始" if today_prog == 0 else "进行中")
+
+        # 计算耗时
+        if finished and create_d:
+            comp_d = parse_date(completed_date)
+            total_days = (comp_d - create_d).days if comp_d else 0
+        elif create_d:
+            total_days = (date.today() - create_d).days
+        else:
+            total_days = 0
+
+        # 停滞检测
+        stalled = False
+        if not finished and status == "进行中":
+            if create_d and (date.today() - create_d).days > 7 and today_prog == 0:
+                stalled = True
+
+        # 构建带 days_from_prev 的节点
+        nodes = []
+        for i, n in enumerate(nodes_raw):
+            prev_d = parse_date(nodes_raw[i - 1]["date"]) if i > 0 else None
+            curr_d = parse_date(n["date"])
+            gap = (curr_d - prev_d).days if prev_d and curr_d else None
+            node = {
+                "phase": n.get("phase", "推进"),
+                "date": n.get("date", ""),
+                "progress": n.get("progress", 0),
+                "days_from_prev": gap,
+            }
+            if n.get("note"):
+                node["note"] = n["note"]
+            if n.get("owner"):
+                node["owner"] = n["owner"]
+            nodes.append(node)
+
+        tasks.append({
+            "no": task_no,
+            "name": name,
+            "date": date_str,
+            "yesterday": yesterday_prog,
+            "today": today_prog,
+            "priority": priority,
+            "finished": finished,
+            "completed_date": completed_date,
+            "category": category,
+            "status": status,
+            "total_days": total_days,
+            "nodes": nodes,
+            "stalled": stalled,
+            "json_backed": True,
+        })
+    return tasks
+
+
+# ----------------------------------------------------------------------------
+# HTML 生成
+# ----------------------------------------------------------------------------
+def build_html(tasks):
+    tasks = sorted(tasks, key=lambda t: int(t["no"]) if t["no"].isdigit() else 0)
+    data_json = json.dumps(tasks, ensure_ascii=False).replace("</", "<\\/")
+
+    # 按分类统计（筛选按钮仍需要静态生成）
+    cat_stats = {}
+    for cat in CATEGORY_ORDER:
+        ct = [t for t in tasks if t["category"] == cat]
+        if ct:
+            cat_stats[cat] = {
+                "total": len(ct),
+                "done": sum(1 for t in ct if t["finished"]),
+                "avg_days": round(sum(t["total_days"] for t in ct if t["finished"]) / max(sum(1 for t in ct if t["finished"]), 1), 1),
+            }
+
+    # 分类筛选按钮
+    cat_btns = "".join(
+        f'<button class="fbtn" data-cat="{c}">{CATEGORY_ICON.get(c, "📁")} {c}</button>'
+        for c in CATEGORY_ORDER
+    )
+    # 状态筛选按钮：data-st 用纯文本，避免 emoji 编码问题
+    status_btns = "".join(
+        f'<button class="fbtn" data-st="{s}">{STATUS_META[s]["icon"]} {s}</button>'
+        for s in STATUS_ORDER
+    )
+
+    pri_meta_json = json.dumps(
+        {"high": ["高", "#d6453d"], "medium": ["中", "#3b6fb0"], "low": ["低", "#2e9e5b"]},
+        ensure_ascii=False,
+    )
+
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>任务流程跟踪树</title>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{background:#f5f6f8;font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif;color:#1f2733;min-height:100vh;padding:24px 16px 60px}}
+.wrap{{max-width:1020px;margin:0 auto}}
+
+/* 头部 */
+.hdr{{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px}}
+.hdr h1{{font-size:24px;font-weight:700;letter-spacing:1px}}
+.hdr .sub{{font-size:13px;color:#5a6577;margin-top:4px}}
+.stats{{display:flex;gap:10px;flex-wrap:wrap}}
+.st{{background:#fff;border:1px solid #e3e8f0;border-radius:10px;padding:8px 14px;text-align:center;min-width:70px}}
+.st b{{display:block;font-size:20px;color:#1f2733}}
+.st span{{font-size:11px;color:#5a6577}}
+
+/* 筛选 */
+.fbar{{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;align-items:center}}
+.fbar .label{{font-size:12px;color:#8893a7;margin-right:2px;font-weight:600}}
+.fbtn{{background:#fff;color:#3a4456;border:1px solid #d8dee9;border-radius:18px;padding:5px 14px;font-size:12px;cursor:pointer;transition:all .15s;user-select:none}}
+.fbtn:hover{{border-color:#60a5fa;color:#1f2733}}
+.fbtn.on{{background:#3b6fb0;border-color:#3b6fb0;color:#fff;font-weight:600}}
+.fbtn .cnt{{opacity:.6;margin-left:3px;font-weight:400}}
+.sep{{width:1px;height:20px;background:#d8dee9;margin:0 6px}}
+
+/* 分类组 */
+.cat-group{{margin-bottom:24px}}
+.cat-hdr{{display:flex;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer;user-select:none}}
+.cat-hdr .icon{{font-size:20px}}
+.cat-hdr .name{{font-size:17px;font-weight:700;color:#1f2733}}
+.cat-hdr .cnt{{font-size:12px;color:#8893a7;background:#eef1f6;border-radius:10px;padding:2px 10px}}
+.cat-hdr .arrow{{font-size:12px;color:#8893a7;transition:transform .2s}}
+.cat-hdr.collapsed .arrow{{transform:rotate(-90deg)}}
+.cat-body{{display:flex;flex-direction:column;gap:14px}}
+.cat-body.hide{{display:none}}
+
+/* 任务卡片 */
+.task{{background:#fff;border:1px solid #e3e8f0;border-radius:12px;padding:16px 18px;transition:all .2s}}
+.task:hover{{border-color:#c8d1de;box-shadow:0 2px 8px rgba(0,0,0,.04)}}
+.task.highlight{{border-color:#3b6fb0;box-shadow:0 0 0 3px rgba(59,111,176,.18)}}
+.task-hdr{{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}}
+.task-title{{display:flex;align-items:center;gap:8px;flex:1;min-width:0}}
+.task-title .sicon{{font-size:16px;flex:none}}
+.task-title .tname{{font-size:15px;font-weight:600;color:#1f2733;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+.task-title .tno{{font-size:11px;color:#8893a7;flex:none}}
+.task-meta{{display:flex;gap:8px;align-items:center;flex:none}}
+.badge{{font-size:11px;font-weight:600;padding:2px 10px;border-radius:10px}}
+.time-tag{{font-size:11px;color:#5a6577;background:#f0f2f5;border-radius:8px;padding:2px 8px}}
+
+/* 流程树 */
+.tree{{position:relative;padding-left:24px;margin-top:8px}}
+.tree::before{{content:"";position:absolute;left:9px;top:4px;bottom:4px;width:2px;background:#e3e8f0;border-radius:1px}}
+.node{{position:relative;padding:6px 0 6px 16px}}
+.node::before{{content:"";position:absolute;left:-16px;top:14px;width:12px;height:2px;background:#e3e8f0}}
+.node-dot{{position:absolute;left:-20px;top:10px;width:12px;height:12px;border-radius:50%;border:2px solid #e3e8f0;background:#fff}}
+.node-dot.create{{border-color:#3b6fb0;background:#e8eef8}}
+.node-dot.progress{{border-color:#d29922;background:#fef8e8}}
+.node-dot.done{{border-color:#2e9e5b;background:#e7f4ec}}
+.node-dot.current{{border-color:#d29922;background:#fef8e8;box-shadow:0 0 0 3px rgba(210,153,34,.15)}}
+.node-dot.stalled{{border-color:#d6453d;background:#fdeceb;box-shadow:0 0 0 3px rgba(214,69,61,.15)}}
+.node-row{{display:flex;align-items:center;gap:10px;flex-wrap:wrap}}
+.node-phase{{font-size:12px;font-weight:600;color:#3a4456;min-width:36px}}
+.node-date{{font-size:12px;color:#5a6577}}
+.node-prog{{font-size:12px;font-weight:600}}
+.node-gap{{font-size:11px;color:#8893a7;background:#f5f6f8;border-radius:6px;padding:1px 6px}}
+.node-warn{{font-size:11px;color:#d6453d}}
+.node-note{{font-size:11px;color:#5a6577;margin-top:3px;padding-left:2px}}
+.node-owner{{font-size:11px;color:#7c6bc4;background:#f0ecf8;border-radius:6px;padding:1px 6px;margin-left:4px}}
+
+/* 汇总行 */
+.summary{{margin-top:10px;padding-top:8px;border-top:1px dashed #e3e8f0;display:flex;align-items:center;gap:8px;font-size:12px;color:#5a6577}}
+.summary b{{color:#1f2733}}
+.add-btn{{font-size:11px;color:#3b6fb0;cursor:pointer;border:1px solid #c8d8ee;border-radius:8px;padding:2px 8px;background:#e8eef8;transition:all .15s}}
+.add-btn:hover{{background:#3b6fb0;color:#fff}}
+.node-actions{{display:inline-flex;gap:4px;margin-left:6px}}
+.node-act{{font-size:11px;cursor:pointer;opacity:.4;transition:opacity .15s;border:none;background:none;padding:0 2px}}
+.node-act:hover{{opacity:1}}
+.node-act.edit:hover{{color:#3b6fb0}}
+.node-act.del:hover{{color:#d6453d}}
+
+/* 弹窗 */
+.modal-bg{{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:1000}}
+.modal-bg.hide{{display:none}}
+.modal{{background:#fff;border-radius:14px;padding:24px;width:380px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,.12)}}
+.modal h3{{font-size:16px;font-weight:700;margin-bottom:16px;color:#1f2733}}
+.modal label{{display:block;font-size:12px;color:#5a6577;margin-bottom:4px;margin-top:12px}}
+.modal input,.modal select,.modal textarea{{width:100%;padding:8px 10px;border:1px solid #d8dee9;border-radius:8px;font-size:13px;box-sizing:border-box;font-family:inherit}}
+.modal textarea{{resize:vertical;min-height:50px}}
+.modal-actions{{display:flex;gap:10px;margin-top:18px;justify-content:flex-end}}
+.modal-actions button{{padding:7px 18px;border-radius:8px;font-size:13px;cursor:pointer;border:1px solid #d8dee9;background:#fff;color:#3a4456;transition:all .15s}}
+.modal-actions .btn-primary{{background:#3b6fb0;color:#fff;border-color:#3b6fb0}}
+.modal-actions .btn-primary:hover{{background:#2d5a94}}
+
+/* 底部复盘 */
+.review{{margin-top:32px;background:#fff;border:1px solid #e3e8f0;border-radius:12px;padding:20px 24px}}
+.review h2{{font-size:18px;font-weight:700;margin-bottom:14px;color:#1f2733}}
+.rev-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}}
+.rev-card{{background:#f8f9fb;border:1px solid #eef1f6;border-radius:10px;padding:14px 16px}}
+.rev-card h3{{font-size:13px;font-weight:600;color:#3a4456;margin-bottom:8px}}
+.rev-row{{display:flex;justify-content:space-between;font-size:12px;color:#5a6577;padding:3px 0}}
+.rev-row b{{color:#1f2733}}
+.rev-list{{font-size:12px;color:#5a6577}}
+.rev-list div{{padding:2px 0}}
+
+/* 空态 */
+.empty{{text-align:center;color:#8893a7;padding:48px 0;font-size:14px}}
+
+/* 排序 */
+.sort-bar{{display:flex;gap:8px;align-items:center;margin-bottom:12px}}
+.sort-btn{{font-size:12px;color:#5a6577;cursor:pointer;padding:3px 10px;border-radius:12px;border:1px solid transparent;transition:all .15s}}
+.sort-btn:hover{{border-color:#d8dee9}}
+.sort-btn.on{{background:#e8eef8;color:#3b6fb0;border-color:#c8d8ee;font-weight:600}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <div>
+      <h1>🌳 任务流程跟踪树</h1>
+      <div class="sub" id="sub"></div>
+    </div>
+    <div class="stats">
+      <div class="st"><b id="st-done">-</b><span>已完成</span></div>
+      <div class="st"><b id="st-inprog">-</b><span>进行中</span></div>
+      <div class="st"><b id="st-notstart">-</b><span>未开始</span></div>
+      <div class="st"><b id="st-avg">-</b><span>平均耗时(天)</span></div>
+      <div class="st"><b id="st-max">-</b><span>最长耗时(天)</span></div>
+    </div>
+  </div>
+
+  <div class="fbar">
+    <span class="label">分类</span>
+    <button class="fbtn on" data-cat="all">📋 全部</button>
+    {cat_btns}
+    <div class="sep"></div>
+    <span class="label">状态</span>
+    <button class="fbtn on" data-st="all">全部</button>
+    <button class="fbtn" data-st="unfinished">⏳ 未完成<span class="cnt" id="cnt-unfinished"></span></button>
+    {status_btns}
+  </div>
+
+  <div class="sort-bar">
+    <span class="label" style="font-size:12px;color:#8893a7;font-weight:600">排序</span>
+    <span class="sort-btn on" data-sort="default">默认</span>
+    <span class="sort-btn" data-sort="priority">优先级</span>
+    <span class="sort-btn" data-sort="days-desc">耗时↓</span>
+    <span class="sort-btn" data-sort="days-asc">耗时↑</span>
+    <span class="sort-btn" data-sort="date">创建时间</span>
+  </div>
+
+  <div id="trees"></div>
+
+  <div class="review" id="review">
+    <h2>📊 复盘分析</h2>
+    <div class="rev-grid" id="rev-grid"></div>
+  </div>
+</div>
+
+<script>
+let TASKS = [];
+const EMBEDDED_TASKS = {data_json};
+const CAT_ORDER = {json.dumps(CATEGORY_ORDER, ensure_ascii=False)};
+const CAT_ICON = {json.dumps(CATEGORY_ICON, ensure_ascii=False)};
+const ST_META = {json.dumps(STATUS_META, ensure_ascii=False)};
+const PRI_META = {pri_meta_json};
+const PRI_ORD = {{high:0,medium:1,low:2}};
+
+let curCat = 'all', curSt = 'all', curSort = 'default';
+
+function fmtDate(s) {{
+  if (!s) return '-';
+  const m = String(s).match(/(\\d{{4}})\\/(\\d{{1,2}})\\/(\\d{{1,2}})/);
+  return m ? `${{m[1]}}/${{m[2].padStart(2,'0')}}/${{m[3].padStart(2,'0')}}` : s;
+}}
+
+function shortDate(s) {{
+  if (!s) return '-';
+  const m = String(s).match(/(\\d{{1,2}})\\/(\\d{{1,2}})/);
+  return m ? `${{m[1]}}/${{m[2]}}` : s;
+}}
+
+function nodeClass(phase, stalled) {{
+  if (stalled && (phase === '当前' || phase === '推进')) return 'stalled';
+  if (phase === '创建') return 'create';
+  if (phase === '完成') return 'done';
+  if (phase === '当前') return 'current';
+  return 'progress';
+}}
+
+function progColor(p) {{
+  if (p >= 80) return '#2e9e5b';
+  if (p >= 40) return '#d29922';
+  return '#d6453d';
+}}
+
+function renderTree(t) {{
+  const sm = ST_META[t.status] || ST_META['进行中'];
+  const pm = PRI_META[t.priority] || PRI_META.medium;
+  const timeLabel = t.finished
+    ? `总耗时 <b>${{t.total_days}}</b> 天`
+    : `已耗时 <b>${{t.total_days}}</b> 天`;
+
+  let nodesHtml = '';
+  for (let _ni = 0; _ni < t.nodes.length; _ni++) {{
+    const n = t.nodes[_ni];
+    const nc = nodeClass(n.phase, t.stalled);
+    const gapHtml = n.days_from_prev != null
+      ? `<span class="node-gap">⏱ ${{n.days_from_prev}}天</span>` : '';
+    const warn_html = (t.stalled && n.phase === '当前') ? '<span class="node-warn">⚠️ 疑似停滞</span>' : '';
+    const pColor = progColor(n.progress);
+    const noteHtml = n.note ? `<div class="node-note">${{n.note}}</div>` : '';
+    const ownerHtml = n.owner ? `<span class="node-owner">👤 ${{n.owner}}</span>` : '';
+    const actHtml = t.json_backed ? `<span class="node-actions"><span class="node-act edit" title="编辑" onclick="openEditNode('${{t.no}}',${{_ni}})">✏️</span><span class="node-act del" title="删除" onclick="deleteNode('${{t.no}}',${{_ni}})">🗑️</span></span>` : '';
+    nodesHtml += `
+      <div class="node">
+        <div class="node-dot ${{nc}}"></div>
+        <div class="node-row">
+          <span class="node-phase">[${{n.phase}}]</span>
+          <span class="node-date">${{fmtDate(n.date)}}</span>
+          <span class="node-prog" style="color:${{pColor}}">${{n.progress}}%</span>
+          ${{gapHtml}}${{warn_html}}${{ownerHtml}}${{actHtml}}
+        </div>
+        ${{noteHtml}}
+      </div>`;
+  }}
+
+  const summaryHtml = `
+    <div class="summary">
+      📊 ${{t.finished ? '全流程总耗时' : '已耗时'}}: <b>${{t.total_days}}天</b>
+      ${{t.stalled ? '&nbsp;<span class="node-warn">⚠️ 疑似停滞</span>' : ''}}
+      ${{!t.finished ? `<span class="add-btn" onclick="openAddNode('${{t.no}}','${{t.name}}')">＋ 添加节点</span>` : ''}}
+    </div>`;
+
+  return `
+    <div class="task" data-no="${{t.no}}" data-cat="${{t.category}}" data-st="${{t.status}}" data-pri="${{t.priority}}" data-days="${{t.total_days}}" data-date="${{t.date}}">
+      <div class="task-hdr">
+        <div class="task-title">
+          <span class="sicon">${{sm.icon}}</span>
+          <span class="tname">${{t.name}}</span>
+          <span class="tno">No.${{t.no}}</span>
+        </div>
+        <div class="task-meta">
+          <span class="badge" style="color:${{pm[1]}};background:${{pm[1]}}18">${{pm[0]}}优先级</span>
+          <span class="time-tag">${{timeLabel}}</span>
+        </div>
+      </div>
+      <div class="tree">${{nodesHtml}}</div>
+      ${{summaryHtml}}
+    </div>`;
+}}
+
+function sortTasks(list) {{
+  const sorted = [...list];
+  switch (curSort) {{
+    case 'priority':
+      sorted.sort((a,b) => (PRI_ORD[a.priority]??1) - (PRI_ORD[b.priority]??1));
+      break;
+    case 'days-desc':
+      sorted.sort((a,b) => b.total_days - a.total_days);
+      break;
+    case 'days-asc':
+      sorted.sort((a,b) => a.total_days - b.total_days);
+      break;
+    case 'date':
+      sorted.sort((a,b) => {{
+        const da = (a.date||'').match(/(\\d{{4}})\\/(\\d+)\\/(\\d+)/);
+        const db = (b.date||'').match(/(\\d{{4}})\\/(\\d+)\\/(\\d+)/);
+        if (!da || !db) return 0;
+        return (+da[1])*10000+(+da[2])*100+(+da[3]) - ((+db[1])*10000+(+db[2])*100+(+db[3]));
+      }});
+      break;
+    default:
+      sorted.sort((a,b) => (Number(a.no)||0) - (Number(b.no)||0));
+  }}
+  return sorted;
+}}
+
+function render() {{
+  const container = document.getElementById('trees');
+  let filtered = TASKS.filter(t => {{
+    if (curCat !== 'all' && t.category !== curCat) return false;
+    if (curSt === 'unfinished') {{ if (t.finished) return false; }}
+    else if (curSt !== 'all' && t.status !== curSt) return false;
+    return true;
+  }});
+
+  if (!filtered.length) {{
+    container.innerHTML = '<div class="empty">该筛选下暂无任务</div>';
+    return;
+  }}
+
+  // 按分类分组
+  const groups = {{}};
+  for (const cat of CAT_ORDER) {{
+    const items = sortTasks(filtered.filter(t => t.category === cat));
+    if (items.length) groups[cat] = items;
+  }}
+
+  let html = '';
+  for (const [cat, items] of Object.entries(groups)) {{
+    const icon = CAT_ICON[cat] || '📁';
+    const doneCnt = items.filter(t => t.finished).length;
+    html += `
+      <div class="cat-group">
+        <div class="cat-hdr" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('hide')">
+          <span class="icon">${{icon}}</span>
+          <span class="name">${{cat}}</span>
+          <span class="cnt">${{items.length}} 个 · 已完成 ${{doneCnt}}</span>
+          <span class="arrow">▼</span>
+        </div>
+        <div class="cat-body">
+          ${{items.map(renderTree).join('')}}
+        </div>
+      </div>`;
+  }}
+  container.innerHTML = html;
+}}
+
+function renderReview() {{
+  const grid = document.getElementById('rev-grid');
+  const total = TASKS.length;
+  const done = TASKS.filter(t => t.finished);
+  const inProg = TASKS.filter(t => t.status === '进行中');
+  const notStart = TASKS.filter(t => t.status === '未开始');
+
+  // 1. 按分类统计
+  let catHtml = '';
+  for (const cat of CAT_ORDER) {{
+    const ct = TASKS.filter(t => t.category === cat);
+    if (!ct.length) continue;
+    const cd = ct.filter(t => t.finished);
+    const avg = cd.length ? (cd.reduce((s,t) => s+t.total_days, 0) / cd.length).toFixed(1) : '-';
+    catHtml += `<div class="rev-row"><span>${{CAT_ICON[cat]||''}} ${{cat}}</span><b>${{ct.length}}个 / 完成${{cd.length}} / 均${{avg}}天</b></div>`;
+  }}
+
+  // 2. 超期 TOP5
+  const topLong = [...done].sort((a,b) => b.total_days - a.total_days).slice(0, 5);
+  let longHtml = topLong.map((t,i) =>
+    `<div>${{i+1}}. ${{t.name}} — <b>${{t.total_days}}天</b></div>`
+  ).join('') || '<div>暂无</div>';
+
+  // 3. 停滞任务
+  const stalled = TASKS.filter(t => t.stalled);
+  let stalledHtml = stalled.length
+    ? stalled.map(t => `<div>⚠️ ${{t.name}} — 已${{t.total_days}}天</div>`).join('')
+    : '<div>暂无停滞任务 👍</div>';
+
+  // 4. 优先级倒挂
+  const lowDone = TASKS.filter(t => t.priority === 'low' && t.finished);
+  const highUndone = TASKS.filter(t => t.priority === 'high' && !t.finished);
+  let invertHtml = '';
+  if (highUndone.length && lowDone.length) {{
+    invertHtml = highUndone.map(t =>
+      `<div>🔴 ${{t.name}} (高优未完成) ←→ ${{lowDone.find(d=>true)?.name || ''}} (低优已完成)</div>`
+    ).join('');
+  }} else {{
+    invertHtml = '<div>暂无倒挂 ✅</div>';
+  }}
+
+  grid.innerHTML = `
+    <div class="rev-card">
+      <h3>📂 按分类统计</h3>
+      ${{catHtml}}
+    </div>
+    <div class="rev-card">
+      <h3>🐢 超期任务 TOP5</h3>
+      <div class="rev-list">${{longHtml}}</div>
+    </div>
+    <div class="rev-card">
+      <h3>⚠️ 停滞任务</h3>
+      <div class="rev-list">${{stalledHtml}}</div>
+    </div>
+    <div class="rev-card">
+      <h3>🔄 优先级倒挂</h3>
+      <div class="rev-list">${{invertHtml}}</div>
+    </div>
+  `;
+}}
+
+// 事件绑定
+document.querySelector('.fbar').addEventListener('click', e => {{
+  const btn = e.target.closest('.fbtn');
+  if (!btn) return;
+  if (btn.dataset.cat !== undefined) {{
+    curCat = btn.dataset.cat;
+    document.querySelectorAll('.fbtn[data-cat]').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+  }}
+  if (btn.dataset.st !== undefined) {{
+    curSt = btn.dataset.st;
+    document.querySelectorAll('.fbtn[data-st]').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+  }}
+  render();
+}});
+
+document.querySelector('.sort-bar').addEventListener('click', e => {{
+  const btn = e.target.closest('.sort-btn');
+  if (!btn) return;
+  curSort = btn.dataset.sort;
+  document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  render();
+}});
+
+// 动态加载数据并渲染
+function updateStats() {{
+  const total = TASKS.length;
+  const done = TASKS.filter(t => t.finished).length;
+  const inProg = TASKS.filter(t => t.status === '\u8fdb\u884c\u4e2d').length;
+  const notStart = TASKS.filter(t => t.status === '\u672a\u5f00\u59cb').length;
+  const unfinished = total - done;
+  const doneTasks = TASKS.filter(t => t.finished);
+  const avgDays = doneTasks.length ? (doneTasks.reduce((s,t) => s + t.total_days, 0) / doneTasks.length).toFixed(1) : '0';
+  const maxDays = doneTasks.length ? Math.max(...doneTasks.map(t => t.total_days)) : 0;
+  const sub = document.getElementById('sub');
+  if (sub) sub.textContent = '\u5171 ' + total + ' \u4e2a\u4efb\u52a1 \u00b7 \u6570\u636e\u622a\u81f3 ' + new Date().toISOString().slice(0,10).replace(/-/g, '/');
+  const setTxt = (id, v) => {{ const el = document.getElementById(id); if (el) el.textContent = v; }};
+  setTxt('st-done', done);
+  setTxt('st-inprog', inProg);
+  setTxt('st-notstart', notStart);
+  setTxt('st-avg', avgDays);
+  setTxt('st-max', maxDays);
+  setTxt('cnt-unfinished', unfinished);
+}}
+
+function loadDataAndRender() {{
+  fetch('/api/tasks').then(r => r.json()).then(data => {{
+    TASKS = data;
+    updateStats();
+    render();
+    renderReview();
+    // URL 参数 ?task=No. 自动定位并高亮任务
+    const params = new URLSearchParams(window.location.search);
+    const taskNo = params.get('task');
+    if (taskNo) {{
+      setTimeout(() => {{
+        const el = document.querySelector(`.task[data-no="${{taskNo}}"]`);
+        if (el) {{
+          el.classList.add('highlight');
+          el.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+          setTimeout(() => el.classList.remove('highlight'), 3000);
+        }}
+      }}, 100);
+    }}
+  }}).catch(() => {{
+    // 如果 API 不可用，使用嵌入数据（file:// 模式）
+    TASKS = EMBEDDED_TASKS;
+    updateStats();
+    render();
+    renderReview();
+  }});
+}}
+loadDataAndRender();
+
+// 添加节点弹窗
+function openAddNode(no, name) {{
+  document.getElementById('modal-no').value = no;
+  document.getElementById('modal-name').textContent = 'No.' + no + ' ' + name;
+  document.getElementById('modal-date').value = new Date().toISOString().slice(0, 10).replace(/-/g, '/');
+  document.getElementById('modal-progress').value = '';
+  document.getElementById('modal-note').value = '';
+  document.getElementById('modal-owner').value = '';
+  document.getElementById('modal-bg').classList.remove('hide');
+}}
+function closeModal() {{
+  document.getElementById('modal-bg').classList.add('hide');
+}}
+function submitNode() {{
+  const no = document.getElementById('modal-no').value;
+  const phase = document.getElementById('modal-phase').value;
+  const dateVal = document.getElementById('modal-date').value;
+  const progress = document.getElementById('modal-progress').value;
+  const note = document.getElementById('modal-note').value;
+  const owner = document.getElementById('modal-owner').value;
+  if (!dateVal || progress === '') {{ alert('请填写日期和进度'); return; }}
+  fetch('/api/add_node', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{no, phase, date: dateVal, progress: parseInt(progress), note, owner}})
+  }}).then(r => r.json()).then(data => {{
+    if (data.ok) {{ location.reload(); }}
+    else {{ alert('添加失败'); }}
+  }}).catch(() => alert('连接服务器失败，请确认已启动 serve_task_flow.py'));
+}}
+// 点击背景关闭弹窗
+document.addEventListener('click', e => {{
+  if (e.target.id === 'modal-bg') closeModal();
+  if (e.target.id === 'edit-modal-bg') closeEditModal();
+}});
+
+// 编辑节点弹窗
+function openEditNode(no, idx) {{
+  const task = TASKS.find(t => t.no === no);
+  if (!task || !task.json_backed) return;
+  const node = task.nodes[idx];
+  document.getElementById('edit-no').value = no;
+  document.getElementById('edit-idx').value = idx;
+  document.getElementById('edit-name').textContent = 'No.' + no + ' ' + task.name;
+  document.getElementById('edit-phase').value = node.phase;
+  document.getElementById('edit-date').value = node.date.replace(/(\\d{{4}})\\/(\\d+)\\/(\\d+)/, (m,y,mo,d) => y + '-' + String(mo).padStart(2,'0') + '-' + String(d).padStart(2,'0'));
+  document.getElementById('edit-progress').value = node.progress;
+  document.getElementById('edit-note').value = node.note || '';
+  document.getElementById('edit-owner').value = node.owner || '';
+  document.getElementById('edit-modal-bg').classList.remove('hide');
+}}
+function closeEditModal() {{
+  document.getElementById('edit-modal-bg').classList.add('hide');
+}}
+function submitEdit() {{
+  const no = document.getElementById('edit-no').value;
+  const idx = parseInt(document.getElementById('edit-idx').value);
+  const phase = document.getElementById('edit-phase').value;
+  const dateVal = document.getElementById('edit-date').value.replace(/-/g, '/');
+  const progress = document.getElementById('edit-progress').value;
+  const note = document.getElementById('edit-note').value;
+  const owner = document.getElementById('edit-owner').value;
+  if (!dateVal || progress === '') {{ alert('请填写日期和进度'); return; }}
+  fetch('/api/edit_node', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{no, index: idx, phase, date: dateVal, progress: parseInt(progress), note, owner}})
+  }}).then(r => r.json()).then(data => {{
+    if (data.ok) {{ location.reload(); }}
+    else {{ alert('编辑失败'); }}
+  }}).catch(() => alert('连接服务器失败'));
+}}
+
+// 删除节点
+function deleteNode(no, idx) {{
+  if (!confirm('确认删除该节点？')) return;
+  fetch('/api/delete_node', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{no, index: idx}})
+  }}).then(r => r.json()).then(data => {{
+    if (data.ok) {{ location.reload(); }}
+    else {{ alert('删除失败'); }}
+  }}).catch(() => alert('连接服务器失败'));
+}}
+</script>
+
+<!-- 添加节点弹窗 -->
+<div id="modal-bg" class="modal-bg hide">
+  <div class="modal">
+    <h3>＋ 添加流程节点</h3>
+    <div id="modal-name" style="font-size:13px;color:#5a6577;margin-bottom:8px"></div>
+    <input type="hidden" id="modal-no">
+    <label>阶段</label>
+    <select id="modal-phase">
+      <option value="推进">推进</option>
+      <option value="完成">完成</option>
+    </select>
+    <label>日期</label>
+    <input type="date" id="modal-date">
+    <label>进度 (%)</label>
+    <input type="number" id="modal-progress" min="0" max="100" placeholder="0-100">
+    <label>责任人</label>
+    <input type="text" id="modal-owner" placeholder="可选，如：张三">
+    <label>备注</label>
+    <textarea id="modal-note" placeholder="可选，记录本次推进内容"></textarea>
+    <div class="modal-actions">
+      <button onclick="closeModal()">取消</button>
+      <button class="btn-primary" onclick="submitNode()">确认添加</button>
+    </div>
+  </div>
+</div>
+
+<!-- 编辑节点弹窗 -->
+<div id="edit-modal-bg" class="modal-bg hide">
+  <div class="modal">
+    <h3>✏️ 编辑流程节点</h3>
+    <div id="edit-name" style="font-size:13px;color:#5a6577;margin-bottom:8px"></div>
+    <input type="hidden" id="edit-no">
+    <input type="hidden" id="edit-idx">
+    <label>阶段</label>
+    <select id="edit-phase">
+      <option value="创建">创建</option>
+      <option value="推进">推进</option>
+      <option value="当前">当前</option>
+      <option value="完成">完成</option>
+    </select>
+    <label>日期</label>
+    <input type="date" id="edit-date">
+    <label>进度 (%)</label>
+    <input type="number" id="edit-progress" min="0" max="100" placeholder="0-100">
+    <label>责任人</label>
+    <input type="text" id="edit-owner" placeholder="可选">
+    <label>备注</label>
+    <textarea id="edit-note" placeholder="可选"></textarea>
+    <div class="modal-actions">
+      <button onclick="closeEditModal()">取消</button>
+      <button class="btn-primary" onclick="submitEdit()">保存修改</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>
+"""
+
+
+# ----------------------------------------------------------------------------
+# 入口
+# ----------------------------------------------------------------------------
+def main():
+    parser = argparse.ArgumentParser(description="生成任务流程跟踪树页面")
+    parser.add_argument("--open", action="store_true", help="生成后打开浏览器")
+    args = parser.parse_args()
+
+    tasks = read_tasks()
+    if not tasks:
+        print(f"[错误] {TASK_FLOWS_JSON} 中没有可展示的任务数据")
+        sys.exit(1)
+
+    html = build_html(tasks)
+    with open(OUT_HTML, "w", encoding="utf-8") as f:
+        f.write(html)
+
+    done = sum(1 for t in tasks if t["finished"])
+    print(f"[完成] 已生成: {OUT_HTML}")
+    print(f"       任务总数: {len(tasks)}, 已完成: {done}, 进行中: {len(tasks) - done}")
+    if args.open:
+        webbrowser.open("file://" + os.path.abspath(OUT_HTML).replace("\\", "/"))
+
+
+if __name__ == "__main__":
+    main()

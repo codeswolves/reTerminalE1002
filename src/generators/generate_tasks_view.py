@@ -1,20 +1,19 @@
 """
 generate_tasks_view.py
-生成 tasks.csv 的可视化筛选页面 (HTML)。
+生成 task_flows.json 的可视化筛选页面 (HTML)。
 
 功能:
-    读取 data/tasks.csv, 生成 output/tasks_view.html。
+    读取 data/task_flows.json, 生成 output/tasks/tasks_view.html。
     页面顶部提供筛选按钮: 已完成任务 / 未完成任务 / 高优先级 / 中优先级 / 低优先级,
     点击后前端 JS 即时筛选显示任务卡片。
     排序规则: 高优先级 → 中优先级 → 低优先级; "全部"标签下未完成任务排前, 已完成排后。
 
 用法:
-    python3 src/generate_tasks_view.py            # 生成页面
-    python3 src/generate_tasks_view.py --open     # 生成后打开浏览器
+    python3 src/generators/generate_tasks_view.py            # 生成页面
+    python3 src/generators/generate_tasks_view.py --open     # 生成后打开浏览器
 """
 
 import argparse
-import csv
 import json
 import os
 import re
@@ -24,13 +23,10 @@ import webbrowser
 # ----------------------------------------------------------------------------
 # 路径
 # ----------------------------------------------------------------------------
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 项目根目录（src/ 的父目录）
-DATA_DIR = os.path.join(BASE_DIR, "data")
-OUT_DIR = os.path.join(BASE_DIR, "output")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # 项目根目录（src/generators/ 的祖父目录）
+OUT_DIR = os.path.join(BASE_DIR, "output", "tasks")
 os.makedirs(OUT_DIR, exist_ok=True)
 OUT_HTML = os.path.join(OUT_DIR, "tasks_view.html")
-
-TASKS_CSV = os.path.join(DATA_DIR, "tasks.csv")
 
 # 优先级显示信息: (中文标签, 主题色, 浅色底) —— 供浅色主题徽章使用
 PRIORITY_META = {
@@ -39,54 +35,11 @@ PRIORITY_META = {
     "low": ("低优先级", "#2e9e5b", "#e7f4ec"),
 }
 
-
-def read_tasks():
-    """读取 tasks.csv, 按 No. 去重并保留最新日期记录。
-
-    返回: 任务 dict 列表, 每个含:
-        no, name, date, yesterday, today, priority, finished, completed_date
-    """
-    if not os.path.exists(TASKS_CSV):
-        print(f"[错误] 文件不存在: {TASKS_CSV}")
-        sys.exit(1)
-
-    with open(TASKS_CSV, "r", newline="", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        rows = [r for r in reader if (r.get("task_name") or "").strip()]
-
-    def norm_date(v):
-        m = re.match(r"(\d{4})/(\d{1,2})/(\d{1,2})", (v or "").strip())
-        return m.groups() if m else ("0", "0", "0")
-
-    # 按 No. 去重: 同一任务保留日期最新的一条记录
-    task_map = {}
-    for r in rows:
-        no = (r.get("No.") or "").strip()
-        if not no:
-            continue
-        if no not in task_map or norm_date(r.get("date")) > norm_date(task_map[no].get("date")):
-            task_map[no] = r
-
-    def to_int(v):
-        try:
-            return int(float((v or "0").strip() or 0))
-        except (ValueError, TypeError):
-            return 0
-
-    tasks = []
-    for r in task_map.values():
-        finished = (r.get("finished") or "").strip().lower() == "yes"
-        tasks.append({
-            "no": (r.get("No.") or "").strip(),
-            "name": (r.get("task_name") or "").strip(),
-            "date": (r.get("date") or "").strip(),
-            "yesterday": to_int(r.get("yesterday progress")),
-            "today": to_int(r.get("today progress")),
-            "priority": (r.get("priority") or "medium").strip().lower(),
-            "finished": finished,
-            "completed_date": (r.get("completed date") or "").strip(),
-        })
-    return tasks
+# 复用 generate_task_flow 的 read_tasks（单一数据源: task_flows.json）
+GEN_DIR = os.path.join(BASE_DIR, "src", "generators")
+if GEN_DIR not in sys.path:
+    sys.path.insert(0, GEN_DIR)
+from generate_task_flow import read_tasks
 
 
 def build_html(tasks):
@@ -95,14 +48,6 @@ def build_html(tasks):
     tasks = sorted(tasks, key=lambda t: int(t["no"]) if t["no"].isdigit() else 0)
     data_json = json.dumps(tasks, ensure_ascii=False)
     data_json = data_json.replace("</", "<\\/")  # 防止 </script> 注入破坏页面
-
-    total = len(tasks)
-    done = sum(1 for t in tasks if t["finished"])
-    pending = total - done
-    # 高/中/低优先级按钮只统计未完成任务
-    high = sum(1 for t in tasks if t["priority"] == "high" and not t["finished"])
-    medium = sum(1 for t in tasks if t["priority"] == "medium" and not t["finished"])
-    low = sum(1 for t in tasks if t["priority"] == "low" and not t["finished"])
 
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -179,36 +124,67 @@ def build_html(tasks):
   .card-meta {{ display: flex; justify-content: space-between; font-size: 11px; color: #8893a7; }}
   .meta-done {{ color: #2e9e5b; }}
   .meta-time {{ color: #3b6fb0; }}
+  .flow-link {{ font-size: 14px; text-decoration: none; cursor: pointer; opacity: .5; transition: opacity .15s }}
+  .flow-link:hover {{ opacity: 1 }}
+  .del-task {{ font-size: 13px; cursor: pointer; opacity: .35; transition: opacity .15s; border: none; background: none; padding: 0 2px }}
+  .del-task:hover {{ opacity: 1; color: #d6453d }}
+  .done-task {{ font-size: 13px; cursor: pointer; opacity: .35; transition: opacity .15s; border: none; background: none; padding: 0 2px }}
+  .done-task:hover {{ opacity: 1; color: #2e9e5b }}
   .empty {{ text-align: center; color: #8893a7; padding: 60px 0; font-size: 14px; grid-column: 1 / -1; }}
+
+  /* 添加任务按钮 */
+  .add-task-btn {{
+    background: #3b6fb0; color: #fff; border: none; border-radius: 20px;
+    padding: 8px 18px; font-size: 13px; cursor: pointer; font-weight: 600;
+    transition: all .15s; margin-left: 12px;
+  }}
+  .add-task-btn:hover {{ background: #2d5a94; }}
+
+  /* 弹窗 */
+  .modal-bg {{ position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 1000; }}
+  .modal-bg.hide {{ display: none; }}
+  .modal {{ background: #fff; border-radius: 14px; padding: 24px; width: 400px; max-width: 90vw; box-shadow: 0 8px 32px rgba(0,0,0,.12); }}
+  .modal h3 {{ font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #1f2733; }}
+  .modal label {{ display: block; font-size: 12px; color: #5a6577; margin-bottom: 4px; margin-top: 12px; }}
+  .modal input, .modal select, .modal textarea {{ width: 100%; padding: 8px 10px; border: 1px solid #d8dee9; border-radius: 8px; font-size: 13px; box-sizing: border-box; font-family: inherit; }}
+  .modal textarea {{ resize: vertical; min-height: 50px; }}
+  .modal-actions {{ display: flex; gap: 10px; margin-top: 18px; justify-content: flex-end; }}
+  .modal-actions button {{ padding: 7px 18px; border-radius: 8px; font-size: 13px; cursor: pointer; border: 1px solid #d8dee9; background: #fff; color: #3a4456; transition: all .15s; }}
+  .modal-actions .btn-primary {{ background: #3b6fb0; color: #fff; border-color: #3b6fb0; }}
+  .modal-actions .btn-primary:hover {{ background: #2d5a94; }}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="header">
-    <div>
-      <div class="title">任务清单</div>
-      <div class="subtitle">共 {total} 个任务 · 已完成 {done} · 进行中 {pending}</div>
+    <div style="display:flex;align-items:center">
+      <div>
+        <div class="title">任务清单</div>
+        <div class="subtitle" id="subtitle"></div>
+      </div>
+      <button class="add-task-btn" onclick="openAddTask()">＋ 添加任务</button>
     </div>
     <div class="stats">
-      <div class="stat"><b>{done}</b><span>已完成</span></div>
-      <div class="stat"><b>{pending}</b><span>进行中</span></div>
+      <div class="stat"><b id="stat-done">-</b><span>已完成</span></div>
+      <div class="stat"><b id="stat-pending">-</b><span>进行中</span></div>
     </div>
   </div>
 
   <div class="filters" id="filters">
-    <button class="filter-btn active" data-filter="all">全部<span class="cnt">{total}</span></button>
-    <button class="filter-btn" data-filter="done">已完成任务<span class="cnt">{done}</span></button>
-    <button class="filter-btn" data-filter="todo">未完成任务<span class="cnt">{pending}</span></button>
-    <button class="filter-btn" data-filter="high">高优先级<span class="cnt">{high}</span></button>
-    <button class="filter-btn" data-filter="medium">中优先级<span class="cnt">{medium}</span></button>
-    <button class="filter-btn" data-filter="low">低优先级<span class="cnt">{low}</span></button>
+    <button class="filter-btn active" data-filter="all">全部<span class="cnt" id="cnt-all"></span></button>
+    <button class="filter-btn" data-filter="done">已完成任务<span class="cnt" id="cnt-done"></span></button>
+    <button class="filter-btn" data-filter="todo">未完成任务<span class="cnt" id="cnt-todo"></span></button>
+    <button class="filter-btn" data-filter="high">高优先级<span class="cnt" id="cnt-high"></span></button>
+    <button class="filter-btn" data-filter="medium">中优先级<span class="cnt" id="cnt-medium"></span></button>
+    <button class="filter-btn" data-filter="low">低优先级<span class="cnt" id="cnt-low"></span></button>
   </div>
 
   <div class="grid" id="grid"></div>
 </div>
 
 <script>
-const TASKS = {data_json};
+let TASKS = [];
+const EMBEDDED_TASKS = {data_json};
 
 const PRIORITY = {{
   high: {{ label: '高优先级', color: '#d6453d', bg: '#fdeceb' }},
@@ -232,9 +208,16 @@ function parseDate(s) {{
 // 任务执行时间(天): 已完成=创建日→完成日, 未完成=创建日→今天
 function execDays(t) {{
   const start = parseDate(t.date);
-  const end = t.finished ? parseDate(t.completed_date) : new Date();
-  if (!start || !end) return null;
-  return Math.round((end - start) / 86400000) + 1;
+  if (!start) return null;
+  if (t.finished) {{
+    const end = parseDate(t.completed_date);
+    if (!end) return null;
+    return Math.round((end - start) / 86400000) + 1;
+  }} else {{
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.round((today - start) / 86400000);
+  }}
 }}
 
 function matches(t, f) {{
@@ -276,7 +259,7 @@ function render(filter) {{
       ? '<span class="meta-done">✓ 已完成' + (t.completed_date ? ' · ' + t.completed_date : '') + '</span>'
       : '<span>进行中</span>';
     const timeInfo = days != null
-      ? '<span class="meta-time">' + (t.finished ? '执行时间：' + days + ' 天' : '已进行 ' + days + ' 天') + '</span>'
+      ? '<span class="meta-time">' + (t.finished ? '执行时间：' + days + ' 天' : (days === 0 ? '今天创建' : '已进行 ' + days + ' 天')) + '</span>'
       : '';
     return `
       <div class="card ${{t.finished ? 'done' : 'todo'}}">
@@ -291,7 +274,11 @@ function render(filter) {{
           <div class="bar"><div class="bar-fill" style="width:${{t.today}}%;background:${{p.color}}"></div></div>
           <span class="bar-pct">${{t.today}}%</span>
         </div>
-        <div class="card-meta">${{status}}${{timeInfo}}</div>
+        <div class="card-meta">${{status}}${{timeInfo}}
+          <a class="flow-link" href="task_flow.html?task=${{t.no}}" title="查看流程树">🌳</a>
+                    ${{!t.finished ? '<button class="done-task" title="一键完成" onclick="completeTask(\\'' + t.no + '\\')">✅</button>' : ''}}
+          <button class="del-task" title="删除任务" onclick="deleteTask('${{t.no}}','${{t.name.replace(/'/g, "\\'")}}')">🗑️</button>
+        </div>
       </div>`;
   }}).join('');
 }}
@@ -306,7 +293,98 @@ function init() {{
     btn.classList.add('active');
     render(btn.dataset.filter);
   }});
-  render('all');
+  // 动态加载数据
+  loadData();
+}}
+
+function loadData() {{
+  fetch('/api/tasks').then(r => r.json()).then(data => {{
+    TASKS = data;
+    updateStats();
+    render('all');
+  }}).catch(() => {{
+    TASKS = EMBEDDED_TASKS;
+    updateStats();
+    render('all');
+  }});
+}}
+
+function updateStats() {{
+  const total = TASKS.length;
+  const done = TASKS.filter(t => t.finished).length;
+  const pending = total - done;
+  const high = TASKS.filter(t => t.priority === 'high' && !t.finished).length;
+  const medium = TASKS.filter(t => t.priority === 'medium' && !t.finished).length;
+  const low = TASKS.filter(t => t.priority === 'low' && !t.finished).length;
+  const sub = document.getElementById('subtitle');
+  if (sub) sub.textContent = '\u5171 ' + total + ' \u4e2a\u4efb\u52a1 \u00b7 \u5df2\u5b8c\u6210 ' + done + ' \u00b7 \u8fdb\u884c\u4e2d ' + pending;
+  const sd = document.getElementById('stat-done');
+  if (sd) sd.textContent = done;
+  const sp = document.getElementById('stat-pending');
+  if (sp) sp.textContent = pending;
+  const ids = {{ all: total, done: done, todo: pending, high: high, medium: medium, low: low }};
+  for (const [k, v] of Object.entries(ids)) {{
+    const el = document.getElementById('cnt-' + k);
+    if (el) el.textContent = v;
+  }}
+}}
+
+// 添加任务弹窗
+function openAddTask() {{
+  document.getElementById('task-name').value = '';
+  document.getElementById('task-priority').value = 'medium';
+  document.getElementById('task-category').value = '个人';
+  document.getElementById('task-progress').value = '0';
+  document.getElementById('task-note').value = '';
+  document.getElementById('add-modal-bg').classList.remove('hide');
+}}
+function closeAddModal() {{
+  document.getElementById('add-modal-bg').classList.add('hide');
+}}
+function submitTask() {{
+  const name = document.getElementById('task-name').value.trim();
+  const priority = document.getElementById('task-priority').value;
+  const category = document.getElementById('task-category').value;
+  const today = parseInt(document.getElementById('task-progress').value) || 0;
+  const note = document.getElementById('task-note').value.trim();
+  if (!name) {{ alert('请填写任务名称'); return; }}
+  fetch('/api/add_task', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{name, priority, category, today, note}})
+  }}).then(r => r.json()).then(data => {{
+    if (data.ok) {{ location.reload(); }}
+    else {{ alert(data.error || '添加失败'); }}
+  }}).catch(() => alert('连接服务器失败，请确认已启动 serve_task_flow.py'));
+}}
+document.addEventListener('click', e => {{
+  if (e.target.id === 'add-modal-bg') closeAddModal();
+}});
+
+// 一键完成任务
+function completeTask(no) {{
+  if (!confirm('确认将任务 No.' + no + ' 标记为已完成？')) return;
+  fetch('/api/complete_task', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{no}})
+  }}).then(r => r.json()).then(data => {{
+    if (data.ok) {{ location.reload(); }}
+    else {{ alert(data.error || '操作失败'); }}
+  }}).catch(() => alert('连接服务器失败'));
+}}
+
+// 删除任务
+function deleteTask(no, name) {{
+  if (!confirm('确认删除任务 No.' + no + ' ' + name + '？\\n\\n该操作将同时删除 CSV 和流程树数据，不可恢复。')) return;
+  fetch('/api/delete_task', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{no}})
+  }}).then(r => r.json()).then(data => {{
+    if (data.ok) {{ location.reload(); }}
+    else {{ alert(data.error || '删除失败'); }}
+  }}).catch(() => alert('连接服务器失败'));
 }}
 
 // 等 DOM 就绪再初始化, 避免元素未加载时出现空引用
@@ -316,19 +394,50 @@ if (document.readyState === 'loading') {{
   init();
 }}
 </script>
+
+<!-- 添加任务弹窗 -->
+<div id="add-modal-bg" class="modal-bg hide">
+  <div class="modal">
+    <h3>＋ 添加新任务</h3>
+    <label>任务名称</label>
+    <input type="text" id="task-name" placeholder="如：完成XX论文编写">
+    <label>优先级</label>
+    <select id="task-priority">
+      <option value="high">高优先级</option>
+      <option value="medium" selected>中优先级</option>
+      <option value="low">低优先级</option>
+    </select>
+    <label>分类</label>
+    <select id="task-category">
+      <option value="科研">科研</option>
+      <option value="工程">工程</option>
+      <option value="标准">标准</option>
+      <option value="专利">专利</option>
+      <option value="个人" selected>个人</option>
+    </select>
+    <label>初始进度 (%)</label>
+    <input type="number" id="task-progress" min="0" max="100" value="0" placeholder="0-100">
+    <label>备注</label>
+    <textarea id="task-note" placeholder="可选，记录任务说明"></textarea>
+    <div class="modal-actions">
+      <button onclick="closeAddModal()">取消</button>
+      <button class="btn-primary" onclick="submitTask()">确认添加</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
 """
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="生成 tasks.csv 可视化筛选页面")
+    parser = argparse.ArgumentParser(description="生成任务可视化筛选页面")
     parser.add_argument("--open", action="store_true", help="生成后打开浏览器")
     args = parser.parse_args()
 
     tasks = read_tasks()
     if not tasks:
-        print(f"[错误] {TASKS_CSV} 中没有可展示的任务数据")
+        print("[错误] 没有可展示的任务数据")
         sys.exit(1)
 
     html = build_html(tasks)

@@ -13,7 +13,7 @@
 在 reTerminal 上设置每日定时任务:
     crontab -e
     # 每天早上 8:00 自动刷新（固定 light 风格）
-    0 8 * * * cd /home/pi/reTerminal && python run_daily.py
+    0 8 * * * cd /home/pi/reTerminal && python src/pipeline/run_daily.py
 """
 
 import argparse
@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 SRC_DIR = Path(__file__).resolve().parent
-BASE_DIR = SRC_DIR.parent  # 项目根目录
+BASE_DIR = SRC_DIR.parent.parent  # 项目根目录（src/pipeline/ 的祖父目录）
 OUTPUT_DIR = BASE_DIR / "output"
 
 # 默认固定使用的风格
@@ -36,14 +36,14 @@ AVAILABLE_STYLES = [
 
 
 def step_generate(date=None, style=None):
-    """步骤1: 生成HTML看板（默认 light 风格）"""
+    """步骤1: 生成HTML看板（默认 light 风格）+ 任务页面"""
     print("=" * 50)
-    print("[STEP 1/3] 生成HTML看板")
+    print("[STEP 1/4] 生成HTML看板")
     print("=" * 50)
     if style is None:
         style = DEFAULT_STYLE
     print(f"[INFO] 今日风格: {style}")
-    cmd = [sys.executable, str(SRC_DIR / "generate_dashboard.py"),
+    cmd = [sys.executable, str(SRC_DIR.parent / "generators" / "generate_dashboard.py"),
            "--style", style]
     if date:
         cmd.extend(["--date", date])
@@ -54,19 +54,37 @@ def step_generate(date=None, style=None):
     return True
 
 
-def step_screenshot():
-    """步骤2: 渲染PNG截图"""
+def step_generate_tasks():
+    """步骤2: 生成任务页面（tasks_view + task_flow）"""
     print()
     print("=" * 50)
-    print("[STEP 2/3] 渲染PNG截图 (800x480)")
+    print("[STEP 2/4] 生成任务页面")
+    print("=" * 50)
+    ok = True
+    for script in ["generate_tasks_view.py", "generate_task_flow.py"]:
+        cmd = [sys.executable, str(SRC_DIR.parent / "generators" / script)]
+        result = subprocess.run(cmd, cwd=str(BASE_DIR))
+        if result.returncode != 0:
+            print(f"[FAIL] {script} 生成失败")
+            ok = False
+    if ok:
+        print("[OK] 任务页面生成完成")
+    return ok
+
+
+def step_screenshot():
+    """步骤3: 渲染PNG截图"""
+    print()
+    print("=" * 50)
+    print("[STEP 3/4] 渲染PNG截图 (800x480)")
     print("=" * 50)
 
-    html_path = OUTPUT_DIR / "dashboard.html"
+    html_path = OUTPUT_DIR / "dashboard" / "dashboard.html"
     if not html_path.exists():
         print("[FAIL] HTML文件不存在，请先完成步骤1")
         return False
 
-    cmd = [sys.executable, str(SRC_DIR / "render_screenshot.py")]
+    cmd = [sys.executable, str(SRC_DIR.parent / "utils" / "render_screenshot.py")]
     result = subprocess.run(cmd, cwd=str(BASE_DIR))
     if result.returncode != 0:
         print("[WARN] PNG截图失败（可能未安装playwright），跳过此步骤")
@@ -76,18 +94,18 @@ def step_screenshot():
 
 
 def step_display():
-    """步骤3: 显示到墨水屏"""
+    """步骤4: 显示到墨水屏"""
     print()
     print("=" * 50)
-    print("[STEP 3/3] 显示到墨水屏")
+    print("[STEP 4/4] 显示到墨水屏")
     print("=" * 50)
 
-    png_path = OUTPUT_DIR / "dashboard.png"
+    png_path = OUTPUT_DIR / "screenshots" / "dashboard.png"
     if not png_path.exists():
         print("[FAIL] PNG文件不存在，请先完成步骤2")
         return False
 
-    cmd = [sys.executable, str(SRC_DIR / "display_on_eink.py"),
+    cmd = [sys.executable, str(SRC_DIR.parent / "utils" / "display_on_eink.py"),
            "--image", str(png_path)]
     result = subprocess.run(cmd, cwd=str(BASE_DIR))
     if result.returncode != 0:
@@ -114,6 +132,7 @@ def run(date=None, do_screenshot=True, do_display=False, style=None):
 
     steps = [
         ("生成HTML", lambda: step_generate(date, style)),
+        ("生成任务页面", lambda: step_generate_tasks()),
         ("渲染截图", lambda: step_screenshot()) if do_screenshot else (None, None),
         # 墨水屏推送默认关闭：需在 reTerminal 设备上运行且 IT8951 驱动已加载
         # 如需启用，命令行加 --display 参数

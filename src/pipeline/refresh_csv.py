@@ -6,11 +6,10 @@ refresh_csv.py — 每日刷新 CSV 进度数据
     python3 refresh_csv.py                  # 刷新全部 CSV
     python3 refresh_csv.py fitness          # 只刷新指定文件(不带 .csv 后缀)
     python3 refresh_csv.py weight 90.5      # 带值刷新
-    python3 refresh_csv.py tasks 3          # tasks 全部 +3
-    python3 refresh_csv.py tasks 2 100      # tasks 按编号设值
 
 说明:
     在此编写每天的进度更新逻辑: 读取 data/ 下的 CSV -> 更新进度 -> 写回。
+    任务数据已迁移到 task_flows.json，相关操作通过 serve_task_flow.py API 完成。
 """
 
 import csv
@@ -19,19 +18,17 @@ import sys
 from datetime import date
 from pathlib import Path
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 
 # 需要刷新(或可被单独指定刷新)的 CSV 文件
 CSV_FILES = [
     "fitness.csv",
     "goals.csv",
     "weight.csv",
-    "tasks.csv",
     "slogan.csv",
 ]
 
-# tasks.csv 固定列数: No.,date,task_name,yesterday progress,today progress,priority,finished,completed date
-TASKS_COL_COUNT = 8
+# tasks 已迁移到 task_flows.json，不再通过 CSV 管理
 
 
 # ---------- 通用工具 ----------
@@ -121,126 +118,7 @@ def refresh_fitness(path: Path, value: str | None) -> None:
     _upsert_today_line(path, date_str, new_line, find_empty=True)
 
 
-def _apply_tasks_progress(lines, matcher=None, delta=None, set_today=None):
-    """对 tasks.csv 的每一行应用进度变更。
-
-    Args:
-        lines: 文件所有行(含表头)
-        matcher: 匹配的任务编号(No.), None 表示全部
-        delta: 增量值(模式1)
-        set_today: 直接设置值(模式2)
-
-    Returns:
-        (lines, changed_parts, skipped_line_nums)
-    """
-    # 列布局: No.(0), date(1), task_name(2), yesterday(3), today(4), priority(5), finished(6), completed date(7)
-    today = _today_str()
-    changed, skipped = [], []
-    for i, line in enumerate(lines[1:], start=1):
-        parts = line.rstrip("\n").split(",")
-        if len(parts) != TASKS_COL_COUNT:
-            if line.strip():
-                skipped.append(i + 2)  # i=1 是 lines[1]（文件第2行），需+2得实际行号
-            continue
-        if matcher is not None and parts[0].strip() != matcher:
-            continue
-        try:
-            old_today = int(parts[4])
-        except ValueError:
-            continue
-        if old_today >= 100:
-            continue  # 已完成任务保持不变
-        parts[3] = str(old_today)                           # yesterday progress <- 旧 today
-        if delta is not None:
-            parts[4] = str(old_today + delta)
-        else:
-            parts[4] = str(set_today)
-        if int(parts[4]) >= 100:
-            parts[6] = "yes"
-            parts[7] = today  # 记录完成日期
-        lines[i] = ",".join(parts) + "\n"
-        changed.append(parts)
-    return lines, changed, skipped
-
-
-def refresh_tasks(path: Path, value) -> None:
-    """tasks.csv: 三种模式。
-
-    模式1: ``python3 refresh_csv.py tasks 3``         → 全部任务 today +3
-    模式2: ``python3 refresh_csv.py tasks 2 100``     → 按编号指定任务 today 设为 100
-    模式3: ``python3 refresh_csv.py tasks 2 +3``      → 按编号指定任务 today +3
-    规则: today progress >= 100 时 finished 自动置为 yes, 并记录 completed date;
-          yesterday progress 始终记录更新前的旧 today 值
-    """
-    # 列布局: No.(0), date(1), task_name(2), yesterday(3), today(4), priority(5), finished(6), completed date(7)
-
-    # 模式2/3: 按任务编号操作 (value 为 [编号, 参数])
-    if isinstance(value, list):
-        if len(value) != 2:
-            print("[提示] tasks.csv 按任务用法: ① python3 refresh_csv.py tasks 2 100  "
-                  "② python3 refresh_csv.py tasks 2 +3")
-            return
-        task_no, arg = str(value[0]), str(value[1])
-        # 判断是增量模式 (+3) 还是设值模式 (100)
-        if arg.startswith("+") or arg.startswith("-"):
-            if not arg.lstrip("+-").isdigit():
-                print(f"[错误] 无效增量格式: {arg}, 示例: +3 或 +5")
-                return
-            delta = int(arg)
-            with open(path, "r", newline="", encoding="utf-8") as f:
-                lines = f.readlines()
-            lines, changed, skipped = _apply_tasks_progress(
-                lines, matcher=task_no, delta=delta)
-            if not changed:
-                print(f"[跳过] 未找到任务或已完成: No.{task_no}")
-                return
-            with open(path, "w", newline="", encoding="utf-8") as f:
-                f.writelines(lines)
-            parts = changed[0]
-            task_name = parts[2]
-            print(f"[完成] 已更新进度: No.{task_no} {task_name} {int(parts[3])} -> {parts[4]} ({delta:+d})"
-                  f" (yesterday 已记录, finished={parts[6]})")
-            _warn_skipped(skipped)
-            return
-        # 设值模式
-        if not arg.lstrip("-").isdigit():
-            print("[提示] tasks.csv 按任务设置用法: python3 refresh_csv.py tasks 1 100")
-            return
-        new_progress = int(arg)
-        with open(path, "r", newline="", encoding="utf-8") as f:
-            lines = f.readlines()
-        lines, changed, skipped = _apply_tasks_progress(
-            lines, matcher=task_no, set_today=new_progress)
-        if not changed:
-            print(f"[跳过] 未找到任务: No.{task_no}")
-            return
-        with open(path, "w", newline="", encoding="utf-8") as f:
-            f.writelines(lines)
-        task_name = changed[0][2]
-        print(f"[完成] 已设置进度: No.{task_no} {task_name} -> {new_progress}"
-              f" (yesterday 记录旧值 {int(changed[0][3])}, finished={changed[0][6]})")
-        _warn_skipped(skipped)
-        return
-
-    # 模式1: 全部 +delta
-    if value is None or not str(value).lstrip("-").isdigit():
-        print("[提示] tasks.csv 用法: ① python3 refresh_csv.py tasks 3 (全部+x)  "
-              "② python3 refresh_csv.py tasks 2 100 (按编号设值)  "
-              "③ python3 refresh_csv.py tasks 2 +3 (按编号+x)")
-        return
-    delta = int(value)
-    with open(path, "r", newline="", encoding="utf-8") as f:
-        lines = f.readlines()
-    lines, changed, skipped = _apply_tasks_progress(lines, delta=delta)
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        f.writelines(lines)
-    if changed:
-        print(f"[完成] 进度已更新: {path} (增量 {delta:+d}, yesterday 已刷新)")
-        for parts in changed:
-            print(f"    No.{parts[0]} {parts[2]}: today {parts[3]} -> {parts[4]} (finished={parts[6]})")
-    else:
-        print(f"[跳过] tasks.csv 中没有可更新的进度行")
-    _warn_skipped(skipped)
+# tasks 已迁移到 task_flows.json，相关操作通过 serve_task_flow.py API 完成
 
 
 def refresh_slogan(path: Path, value: str | None) -> None:
@@ -287,7 +165,6 @@ def refresh_goals(path: Path, value: str | None) -> None:
 _REFRESHERS = {
     "weight.csv": refresh_weight,
     "fitness.csv": refresh_fitness,
-    "tasks.csv": refresh_tasks,
     "slogan.csv": refresh_slogan,
     "goals.csv": refresh_goals,
 }
@@ -316,9 +193,9 @@ def main() -> None:
 
     支持:
         python3 refresh_csv.py                        # 全部刷新
-        python3 refresh_csv.py tasks 3                # 单文件 + 单值
-        python3 refresh_csv.py tasks 任务名 100        # 单文件 + 多值
-        python3 refresh_csv.py fitness tasks 跑步5公里  # 多文件 + 单值(最后一个非文件名参数)
+        python3 refresh_csv.py weight 90.5            # 单文件 + 单值
+        python3 refresh_csv.py fitness 跑步5公里       # 单文件 + 打卡内容
+        python3 refresh_csv.py fitness weight 跑步     # 多文件 + 单值
     """
     args = sys.argv[1:]
     if not args:

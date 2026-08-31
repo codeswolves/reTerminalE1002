@@ -45,7 +45,7 @@ server = HTTPServer((args.host, args.port), TaskFlowHandler)
 
 ### 2. nginx.conf 加 /api/ 反向代理
 
-`~/Hugo-blog/nginx.conf`（bind mount 进 blog-nginx 容器）：
+`<home-dir>/Hugo-blog/nginx.conf`（bind mount 进 blog-nginx 容器）：
 
 ```nginx
 location /api/ {
@@ -61,7 +61,7 @@ location /api/ {
 
 ### 3. systemd 用户服务（开机自启）
 
-`~/.config/systemd/user/task-flow.service`：
+`<home-dir>/.config/systemd/user/task-flow.service`：
 
 ```ini
 [Unit]
@@ -70,8 +70,8 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/Lijiawei/Code/reTerminal
-ExecStart=/home/Lijiawei/Code/reTerminal/.venv/bin/python /home/Lijiawei/Code/reTerminal/src/utils/serve_task_flow.py --host 0.0.0.0 --port 8080
+WorkingDirectory=<repo-dir>
+ExecStart=<repo-dir>/.venv/bin/python <repo-dir>/src/utils/serve_task_flow.py --host 0.0.0.0 --port 8080
 Restart=always
 RestartSec=5
 
@@ -90,7 +90,7 @@ systemctl --user start task-flow.service
 ### 4. Linger（关键）
 
 ```bash
-loginctl enable-linger Lijiawei
+loginctl enable-linger nasuser
 ```
 
 > 必须开启 linger，否则用户 systemd 服务只在登录会话中存在，NAS 重启后不会自动运行。
@@ -145,5 +145,5 @@ curl -s -X POST -H 'Content-Type: application/json' \
 - `src/utils/serve_task_flow.py` — HTTP 服务 + API
 - `src/generators/generate_task_flow.py` — 数据读取/写入函数（read_tasks / read_tasks_raw / write_tasks_raw）
 - `data/task_flows.json` — 任务流程数据（动态编辑的落盘目标）
-- `~/Hugo-blog/nginx.conf` — 反向代理配置
-- `~/.config/systemd/user/task-flow.service` — systemd 服务单元
+- `<home-dir>/Hugo-blog/nginx.conf` — 反向代理配置
+- `<home-dir>/.config/systemd/user/task-flow.service` — systemd 服务单元

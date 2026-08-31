@@ -209,14 +209,15 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
 def main():
     parser = argparse.ArgumentParser(description="Task Flow 本地服务器")
     parser.add_argument("--port", type=int, default=8080, help="端口号 (默认 8080)")
+    parser.add_argument("--host", type=str, default="0.0.0.0", help="监听地址 (默认 0.0.0.0)")
     args = parser.parse_args()
 
     url = f"http://localhost:{args.port}/task_flow.html"
-    print(f"[serve] 启动服务器 http://localhost:{args.port}")
+    print(f"[serve] 启动服务器 http://{args.host}:{args.port}")
     print(f"[serve] 访问: {url}")
     print(f"[serve] Ctrl+C 停止")
 
-    server = HTTPServer(("127.0.0.1", args.port), TaskFlowHandler)
+    server = HTTPServer((args.host, args.port), TaskFlowHandler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

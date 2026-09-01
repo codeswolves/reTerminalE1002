@@ -629,5 +629,20 @@
         "note": "一键完成"
       }
     ]
+  },
+  {
+    "no": "31",
+    "name": "给hg补充一个仿真",
+    "date": "2026/09/01",
+    "priority": "medium",
+    "category": "科研",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/09/01",
+        "progress": 0,
+        "note": ""
+      }
+    ]
   }
 ]

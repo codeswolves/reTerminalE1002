@@ -336,6 +336,7 @@ function openAddTask() {{
   document.getElementById('task-category').value = '个人';
   document.getElementById('task-progress').value = '0';
   document.getElementById('task-note').value = '';
+  document.getElementById('task-owner').value = '';
   document.getElementById('add-modal-bg').classList.remove('hide');
 }}
 function closeAddModal() {{
@@ -347,11 +348,12 @@ function submitTask() {{
   const category = document.getElementById('task-category').value;
   const today = parseInt(document.getElementById('task-progress').value) || 0;
   const note = document.getElementById('task-note').value.trim();
+  const owner = document.getElementById('task-owner').value.trim();
   if (!name) {{ alert('请填写任务名称'); return; }}
   fetch('/api/add_task', {{
     method: 'POST',
     headers: {{'Content-Type': 'application/json'}},
-    body: JSON.stringify({{name, priority, category, today, note}})
+    body: JSON.stringify({{name, priority, category, today, note, owner}})
   }}).then(r => r.json()).then(data => {{
     if (data.ok) {{ location.reload(); }}
     else {{ alert(data.error || '添加失败'); }}
@@ -415,6 +417,8 @@ if (document.readyState === 'loading') {{
       <option value="专利">专利</option>
       <option value="个人" selected>个人</option>
     </select>
+    <label>责任人</label>
+    <input type="text" id="task-owner" placeholder="可选，填写负责人姓名">
     <label>初始进度 (%)</label>
     <input type="number" id="task-progress" min="0" max="100" value="0" placeholder="0-100">
     <label>备注</label>

@@ -632,7 +632,8 @@
         "phase": "完成",
         "date": "2026/08/31",
         "progress": 100,
-        "note": "一键完成"
+        "note": "一键完成",
+        "owner": "李佳伟"
       }
     ]
   },
@@ -742,6 +743,64 @@
         "date": "2026/09/09",
         "progress": 0,
         "note": ""
+      },
+      {
+        "phase": "完成",
+        "date": "2026/09/10",
+        "progress": 100,
+        "note": "一键完成"
+      }
+    ]
+  },
+  {
+    "no": "37",
+    "name": "BGP-LS-SPF优化写一个论文",
+    "date": "2026/09/10",
+    "priority": "medium",
+    "category": "科研",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/09/10",
+        "progress": 0,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "38",
+    "name": "看《中央企业未来产业下一代互联网领域实施方案》",
+    "date": "2026/09/10",
+    "priority": "low",
+    "category": "个人",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/09/10",
+        "progress": 0,
+        "note": ""
+      },
+      {
+        "phase": "完成",
+        "date": "2026/09/10",
+        "progress": 100,
+        "note": "一键完成"
+      }
+    ]
+  },
+  {
+    "no": "39",
+    "name": "测试一下codex、kimi-work等工具",
+    "date": "2026/09/10",
+    "priority": "low",
+    "category": "个人",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/09/10",
+        "progress": 0,
+        "note": "",
+        "owner": "李佳伟"
       }
     ]
   }

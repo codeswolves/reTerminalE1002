@@ -126,6 +126,7 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
             category = data.get("category", "个人").strip()
             today_prog = int(data.get("today", 0))
             note = data.get("note", "").strip()
+            owner = data.get("owner", "").strip()
 
             if not task_name:
                 self._send_json({"ok": False, "error": "任务名不能为空"})
@@ -150,7 +151,7 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
                 "priority": priority,
                 "category": category,
                 "nodes": [{"phase": "创建", "date": today_str,
-                           "progress": today_prog, "note": note}],
+                           "progress": today_prog, "note": note, "owner": owner}],
             }
             tasks.append(new_task)
             write_tasks_raw(tasks)

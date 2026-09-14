@@ -12,17 +12,31 @@ import json
 import os
 import sys
 from datetime import date
-from http.server import HTTPServer, SimpleHTTPRequestHandler
-from urllib.parse import parse_qs, urlparse
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+from urllib.parse import unquote, urlparse
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUTPUT_DIR = os.path.join(BASE_DIR, "output", "tasks")
+PROJECT_DIR = os.path.join(BASE_DIR, "output", "project")
 
 # 导入 generate_task_flow 的数据函数
 GEN_DIR = os.path.join(BASE_DIR, "src", "generators")
 if GEN_DIR not in sys.path:
     sys.path.insert(0, GEN_DIR)
-from generate_task_flow import read_tasks, read_tasks_raw, write_tasks_raw
+from generate_task_flow import read_tasks, read_tasks_raw, write_tasks_raw  # noqa: E402
+from meta import DEFAULT_CATEGORY, DEFAULT_PRIORITY  # noqa: E402
+from generate_project import (  # noqa: E402
+    build_projects,
+    add_project as proj_add,
+    update_project as proj_update,
+    delete_project as proj_delete,
+    add_node as pnode_add,
+    edit_node as pnode_edit,
+    delete_node as pnode_delete,
+    set_done as pnode_done,
+    link_node as pnode_link,
+    unlink_node as pnode_unlink,
+)
 
 
 class TaskFlowHandler(SimpleHTTPRequestHandler):
@@ -36,14 +50,62 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode("utf-8"))
 
     def _read_body(self):
-        length = int(self.headers.get("Content-Length", 0))
-        return json.loads(self.rfile.read(length).decode("utf-8"))
+        """读取并解析 JSON 请求体; 非法请求返回空 dict, 避免抛异常中断连接。"""
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            if length <= 0 or length > 8 * 1024 * 1024:
+                return {}
+            return json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return {}
+
+    def _safe_project_path(self, rel):
+        """把 /project/xxx 映射到 PROJECT_DIR 内, 阻止 ../ 目录穿越; 越界返回空串。"""
+        root = os.path.realpath(PROJECT_DIR)
+        target = os.path.realpath(os.path.join(root, rel))
+        if target != root and not target.startswith(root + os.sep):
+            return ""
+        return target
+
+    @staticmethod
+    def _to_int(value, default):
+        """宽松转 int: 非法或缺失时返回 default, 避免请求参数错误打断连接。"""
+        try:
+            return int(round(float(str(value).strip())))
+        except (TypeError, ValueError):
+            return default
+
+    def _send_file(self, file_path):
+        """发送本地静态文件（用于 output/project 下的页面）。"""
+        if not os.path.isfile(file_path):
+            self.send_error(404)
+            return
+        ext = os.path.splitext(file_path)[1].lower()
+        ctype = {
+            ".html": "text/html; charset=utf-8",
+            ".css": "text/css; charset=utf-8",
+            ".js": "application/javascript; charset=utf-8",
+            ".json": "application/json; charset=utf-8",
+            ".png": "image/png",
+        }.get(ext, "application/octet-stream")
+        with open(file_path, "rb") as f:
+            body = f.read()
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_GET(self):
         parsed = urlparse(self.path)
-        if parsed.path == "/api/tasks":
-            tasks = read_tasks()
-            self._send_json(tasks)
+        path = parsed.path
+        if path == "/api/tasks":
+            self._send_json(read_tasks())
+        elif path == "/api/projects":
+            self._send_json(build_projects())
+        elif path.startswith("/project/"):
+            rel = unquote(path[len("/project/"):]) or "project_index.html"
+            self._send_file(self._safe_project_path(rel))
         else:
             super().do_GET()
 
@@ -56,7 +118,7 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
             task_no = data.get("no", "")
             phase = data.get("phase", "推进")
             date_val = data.get("date", "")
-            progress = int(data.get("progress", 0))
+            progress = max(0, min(100, self._to_int(data.get("progress", 0), 0)))
             note = data.get("note", "")
             owner = data.get("owner", "")
 
@@ -83,7 +145,7 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
         elif path == "/api/edit_node":
             data = self._read_body()
             task_no = data.get("no", "")
-            idx = int(data.get("index", -1))
+            idx = self._to_int(data.get("index", -1), -1)
             tasks = read_tasks_raw()
             ok = False
             for item in tasks:
@@ -94,7 +156,8 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
                     if "date" in data:
                         node["date"] = data["date"]
                     if "progress" in data:
-                        node["progress"] = int(data["progress"])
+                        node["progress"] = max(0, min(100, self._to_int(
+                            data["progress"], node.get("progress", 0))))
                     if "note" in data:
                         node["note"] = data["note"]
                     if "owner" in data:
@@ -107,7 +170,7 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
         elif path == "/api/delete_node":
             data = self._read_body()
             task_no = data.get("no", "")
-            idx = int(data.get("index", -1))
+            idx = self._to_int(data.get("index", -1), -1)
             tasks = read_tasks_raw()
             ok = False
             for item in tasks:
@@ -122,9 +185,9 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
         elif path == "/api/add_task":
             data = self._read_body()
             task_name = data.get("name", "").strip()
-            priority = data.get("priority", "medium").strip()
-            category = data.get("category", "个人").strip()
-            today_prog = int(data.get("today", 0))
+            priority = data.get("priority", DEFAULT_PRIORITY).strip()
+            category = data.get("category", DEFAULT_CATEGORY).strip()
+            today_prog = max(0, min(100, self._to_int(data.get("today", 0), 0)))
             note = data.get("note", "").strip()
             owner = data.get("owner", "").strip()
 
@@ -183,22 +246,81 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
             ok = False
             for item in tasks:
                 if str(item.get("no", "")) == task_no:
-                    nodes = item.get("nodes", [])
-                    # 如果最后一个节点不是完成节点，添加一个
-                    if nodes and nodes[-1].get("progress", 0) < 100:
+                    nodes = item.setdefault("nodes", [])
+                    last = nodes[-1] if nodes else None
+                    if last is None or last.get("phase") != "完成":
+                        # 末节点不是完成节点(无论当前进度多少), 追加一个完成节点
                         nodes.append({
                             "phase": "完成",
                             "date": today_str,
                             "progress": 100,
                             "note": "一键完成",
                         })
-                    elif nodes:
-                        nodes[-1]["progress"] = 100
-                        nodes[-1]["phase"] = nodes[-1].get("phase", "完成")
+                    else:
+                        # 已有完成节点, 确保为 100% 并刷新完成日期
+                        last["progress"] = 100
+                        last["date"] = today_str
                     ok = True
                     break
             write_tasks_raw(tasks)
             self._send_json({"ok": ok})
+
+        elif path == "/api/project/add":
+            data = self._read_body()
+            new_id, err = proj_add(data)
+            if err:
+                self._send_json({"ok": False, "error": err})
+            else:
+                self._send_json({"ok": True, "id": new_id})
+
+        elif path == "/api/project/edit":
+            data = self._read_body()
+            pid, err = proj_update(data)
+            if err:
+                self._send_json({"ok": False, "error": err})
+            else:
+                self._send_json({"ok": True, "id": pid})
+
+        elif path == "/api/project/delete":
+            data = self._read_body()
+            removed, err = proj_delete(data.get("ids", []))
+            if err:
+                self._send_json({"ok": False, "error": err})
+            else:
+                self._send_json({"ok": True, "removed": removed})
+
+        elif path == "/api/pnode/add":
+            data = self._read_body()
+            new_id, err = pnode_add(data.get("project"), data.get("parent"), data.get("node", {}))
+            if err:
+                self._send_json({"ok": False, "error": err})
+            else:
+                self._send_json({"ok": True, "id": new_id})
+
+        elif path == "/api/pnode/edit":
+            data = self._read_body()
+            ok, err = pnode_edit(data.get("project"), data.get("id"), data.get("node", {}))
+            self._send_json({"ok": True} if ok else {"ok": False, "error": err})
+
+        elif path == "/api/pnode/delete":
+            data = self._read_body()
+            ok, err = pnode_delete(data.get("project"), data.get("id"))
+            self._send_json({"ok": True} if ok else {"ok": False, "error": err})
+
+        elif path == "/api/pnode/link":
+            data = self._read_body()
+            ok, err = pnode_link(data.get("project"), data.get("from"), data.get("to"))
+            self._send_json({"ok": True} if ok else {"ok": False, "error": err})
+
+        elif path == "/api/pnode/unlink":
+            data = self._read_body()
+            ok, err = pnode_unlink(data.get("project"), data.get("from"), data.get("to"))
+            self._send_json({"ok": True} if ok else {"ok": False, "error": err})
+
+        elif path == "/api/pnode/done":
+            data = self._read_body()
+            ok, err = pnode_done(data.get("project"), data.get("id"), bool(data.get("done", True)))
+            self._send_json({"ok": True} if ok else {"ok": False, "error": err})
 
         else:
             self.send_error(404)
@@ -218,7 +340,9 @@ def main():
     print(f"[serve] 访问: {url}")
     print(f"[serve] Ctrl+C 停止")
 
-    server = HTTPServer((args.host, args.port), TaskFlowHandler)
+    # 多线程: 避免浏览器 keep-alive 连接占满导致后续请求全部挂起
+    server = ThreadingHTTPServer((args.host, args.port), TaskFlowHandler)
+    server.daemon_threads = True
     try:
         server.serve_forever()
     except KeyboardInterrupt:

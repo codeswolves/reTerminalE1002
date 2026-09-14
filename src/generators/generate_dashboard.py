@@ -1,7 +1,7 @@
 """
 generate_dashboard.py
 生成 reTerminal 用的 800x480 仪表盘 HTML。
-结构完全对齐 E:/WorkBuddy/design/dashboard.html 模板。
+结构对齐 800x480 看板设计模板（多主题、三环 + 双段任务条 + 月历）。
 支持多主题换肤 (--style)。
 """
 
@@ -12,7 +12,7 @@ import os
 import sys
 import urllib.request
 import urllib.error
-from datetime import datetime, timedelta, date
+from datetime import datetime, date
 
 # ----------------------------------------------------------------------------
 # 路径
@@ -300,8 +300,15 @@ def fetch_weather(city="Beijing"):
 def read_csv_dicts(path):
     if not os.path.exists(path):
         return []
-    with open(path, newline="", encoding="utf-8-sig") as f:
-        return list(csv.DictReader(f))
+    # 优先 utf-8-sig(兼容 Excel 的 BOM); 若文件被另存为 GBK 则回退, 避免整个看板生成失败
+    for enc in ("utf-8-sig", "gbk"):
+        try:
+            with open(path, newline="", encoding=enc) as f:
+                return list(csv.DictReader(f))
+        except UnicodeDecodeError:
+            continue
+    print(f"[警告] {path} 编码无法识别（既不是 UTF-8 也不是 GBK），已跳过")
+    return []
 
 
 def _norm_date(s):
@@ -804,7 +811,7 @@ def generate(target_date=None, open_browser=False, style=DEFAULT_STYLE, out_file
     # 默认嵌入中文字体子集，保证设备端（如 reTerminal）无中文字体也能正常显示
     if not no_embed:
         try:
-            sys.path.insert(0, os.path.join(os.path.dirname(BASE_DIR), "src", "utils"))
+            sys.path.insert(0, os.path.join(BASE_DIR, "src", "utils"))
             import embed_cjk_font
             embed_cjk_font.embed_font_file(target_path)
         except Exception as exc:

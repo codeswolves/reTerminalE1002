@@ -16,7 +16,6 @@ generate_tasks_view.py
 import argparse
 import json
 import os
-import re
 import sys
 import webbrowser
 
@@ -28,18 +27,19 @@ OUT_DIR = os.path.join(BASE_DIR, "output", "tasks")
 os.makedirs(OUT_DIR, exist_ok=True)
 OUT_HTML = os.path.join(OUT_DIR, "tasks_view.html")
 
-# 优先级显示信息: (中文标签, 主题色, 浅色底) —— 供浅色主题徽章使用
-PRIORITY_META = {
-    "high": ("高优先级", "#d6453d", "#fdeceb"),
-    "medium": ("中优先级", "#3b6fb0", "#e8eef8"),
-    "low": ("低优先级", "#2e9e5b", "#e7f4ec"),
-}
-
-# 复用 generate_task_flow 的 read_tasks（单一数据源: task_flows.json）
+# 分类 / 优先级 统一取自 meta.py（单一数据源: task_flows.json 与枚举都不再各写一份）
 GEN_DIR = os.path.join(BASE_DIR, "src", "generators")
 if GEN_DIR not in sys.path:
     sys.path.insert(0, GEN_DIR)
-from generate_task_flow import read_tasks
+from meta import (  # noqa: E402
+    CATEGORY_ORDER,
+    DEFAULT_CATEGORY,
+    DEFAULT_PRIORITY,
+    PRIORITY_META,
+    PRIORITY_ORDER,
+    js,
+)
+from generate_task_flow import read_tasks  # noqa: E402
 
 
 def build_html(tasks):
@@ -48,6 +48,18 @@ def build_html(tasks):
     tasks = sorted(tasks, key=lambda t: int(t["no"]) if t["no"].isdigit() else 0)
     data_json = json.dumps(tasks, ensure_ascii=False)
     data_json = data_json.replace("</", "<\\/")  # 防止 </script> 注入破坏页面
+
+    # 下拉选项从 meta 统一生成, 避免与枚举不同步(历史上曾漏掉"管理"分类)
+    cat_options = "".join(
+        '      <option value="%s"%s>%s</option>\n'
+        % (c, " selected" if c == DEFAULT_CATEGORY else "", c)
+        for c in CATEGORY_ORDER
+    )
+    pri_options = "".join(
+        '      <option value="%s"%s>%s</option>\n'
+        % (k, " selected" if k == DEFAULT_PRIORITY else "", v["label"])
+        for k, v in PRIORITY_META.items()
+    )
 
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -186,12 +198,8 @@ def build_html(tasks):
 let TASKS = [];
 const EMBEDDED_TASKS = {data_json};
 
-const PRIORITY = {{
-  high: {{ label: '高优先级', color: '#d6453d', bg: '#fdeceb' }},
-  medium: {{ label: '中优先级', color: '#3b6fb0', bg: '#e8eef8' }},
-  low: {{ label: '低优先级', color: '#2e9e5b', bg: '#e7f4ec' }},
-}};
-const PRIO_ORDER = {{ high: 0, medium: 1, low: 2 }};
+const PRIORITY = {js(PRIORITY_META)};
+const PRIO_ORDER = {js({k: i for i, k in enumerate(PRIORITY_ORDER)})};
 
 // 任务创建时间转可比较数值 (YYYY/MM/DD)
 function dateVal(t) {{
@@ -378,7 +386,7 @@ function completeTask(no) {{
 
 // 删除任务
 function deleteTask(no, name) {{
-  if (!confirm('确认删除任务 No.' + no + ' ' + name + '？\\n\\n该操作将同时删除 CSV 和流程树数据，不可恢复。')) return;
+  if (!confirm('确认删除任务 No.' + no + ' ' + name + '？\\n\\n该操作将删除该任务及其全部流程节点，不可恢复。')) return;
   fetch('/api/delete_task', {{
     method: 'POST',
     headers: {{'Content-Type': 'application/json'}},
@@ -405,18 +413,10 @@ if (document.readyState === 'loading') {{
     <input type="text" id="task-name" placeholder="如：完成XX论文编写">
     <label>优先级</label>
     <select id="task-priority">
-      <option value="high">高优先级</option>
-      <option value="medium" selected>中优先级</option>
-      <option value="low">低优先级</option>
-    </select>
+{pri_options}    </select>
     <label>分类</label>
     <select id="task-category">
-      <option value="科研">科研</option>
-      <option value="工程">工程</option>
-      <option value="标准">标准</option>
-      <option value="专利">专利</option>
-      <option value="个人" selected>个人</option>
-    </select>
+{cat_options}    </select>
     <label>责任人</label>
     <input type="text" id="task-owner" placeholder="可选，填写负责人姓名">
     <label>初始进度 (%)</label>

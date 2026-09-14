@@ -848,5 +848,21 @@
         "note": ""
       }
     ]
+  },
+  {
+    "no": "43",
+    "name": "修复任务看板的“一键完成”bug",
+    "date": "2026/09/14",
+    "priority": "medium",
+    "category": "个人",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/09/14",
+        "progress": 100,
+        "note": "",
+        "owner": "李佳伟"
+      }
+    ]
   }
 ]

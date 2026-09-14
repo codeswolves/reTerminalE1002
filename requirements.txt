@@ -1,9 +1,15 @@
 # reTerminal E-Ink Dashboard Generator
 # 核心依赖（HTML 生成，无需额外安装）
-# Python 内置模块: csv, datetime, pathlib, json
+# Python 内置模块: csv, datetime, pathlib, json, http.server
 
-# 可选：截图工具
+# 可选：截图工具（HTML -> PNG）
 playwright>=1.40.0
+# 安装后还需执行: playwright install chromium
 
-# 可选：reTerminal 墨水屏驱动
+# 可选：中文字体子集嵌入（generate_dashboard.py 默认启用，缺少则自动跳过）
+fonttools>=4.47.0
+brotli>=1.1.0
+
+# 可选：reTerminal 墨水屏驱动（仅设备端需要）
 # Pillow>=10.0.0
+# IT8951 驱动由 Seeed 官方仓库提供, 不在 PyPI 上

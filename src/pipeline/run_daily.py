@@ -61,7 +61,7 @@ def step_generate_tasks():
     print("[STEP 2/4] 生成任务页面")
     print("=" * 50)
     ok = True
-    for script in ["generate_tasks_view.py", "generate_task_flow.py"]:
+    for script in ["generate_tasks_view.py", "generate_task_flow.py", "generate_project.py"]:
         cmd = [sys.executable, str(SRC_DIR.parent / "generators" / script)]
         result = subprocess.run(cmd, cwd=str(BASE_DIR))
         if result.returncode != 0:
@@ -102,7 +102,7 @@ def step_display():
 
     png_path = OUTPUT_DIR / "screenshots" / "dashboard.png"
     if not png_path.exists():
-        print("[FAIL] PNG文件不存在，请先完成步骤2")
+        print("[FAIL] PNG文件不存在，请先完成步骤3（截图）")
         return False
 
     cmd = [sys.executable, str(SRC_DIR.parent / "utils" / "display_on_eink.py"),

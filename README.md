@@ -14,6 +14,7 @@
 - **全流水线**：生成 HTML → 截图 PNG → 推送墨水屏
 - **任务清单可视化**：完成状态/优先级筛选 + 优先级排序 + 执行时间统计
 - **任务流程跟踪树**：可视化每个任务的推进节点、耗时、负责人，支持交互式增删改节点
+- **项目管理（DAG）**：多项目索引 + 从起点到结束节点的有向无环图，支持里程碑依赖、**多路汇聚**、进度跟踪与页面上直接编辑
 
 ## 项目结构
 
@@ -23,6 +24,7 @@ reTerminal/
 │   ├── weight.csv               # 体重记录
 │   ├── fitness.csv              # 健身打卡（含 yesterday/today 双段数据）
 │   ├── task_flows.json          # 任务流程数据（含元数据 + 流程节点）
+│   ├── projects.json            # 项目数据（DAG：nodes 节点表 + edges 边表）
 │   ├── goals.csv                # 论文/专利目标进度
 │   └── slogan.csv               # 口号记录
 ├── output/                      # 生成结果
@@ -31,16 +33,21 @@ reTerminal/
 │   │   └── dashboard_<style>.html  # 各主题独立文件（--all 生成）
 │   ├── screenshots/             # PNG 截图
 │   │   └── dashboard.png
-│   └── tasks/                   # 任务相关页面
-│       ├── tasks_view.html      # 任务清单可视化筛选页面
-│       └── task_flow.html       # 任务流程跟踪树页面
+│   ├── tasks/                   # 任务相关页面
+│   │   ├── tasks_view.html      # 任务清单可视化筛选页面
+│   │   └── task_flow.html       # 任务流程跟踪树页面
+│   └── project/                 # 项目相关页面
+│       ├── project_index.html   # 项目索引（新建/修改/删除项目）
+│       └── project_tree.html    # 项目 DAG 图（里程碑、多路汇聚、连线）
 ├── src/                         # 全部代码
 │   ├── generators/              # HTML 生成器
+│   │   ├── meta.py                  # 分类/优先级/状态/节点类型的统一定义（单一来源）
 │   │   ├── generate_dashboard.py    # 仪表盘 HTML 生成器（核心）
 │   │   ├── generate_tasks_view.py   # 任务清单可视化页生成器
-│   │   └── generate_task_flow.py    # 任务流程跟踪树页生成器（含数据层）
+│   │   ├── generate_task_flow.py    # 任务流程跟踪树页生成器（含任务数据层）
+│   │   └── generate_project.py      # 项目管理页生成器（含 DAG 数据层）
 │   ├── utils/                   # 工具脚本
-│   │   ├── serve_task_flow.py       # 任务页面 HTTP 服务器（静态文件 + REST API）
+│   │   ├── serve_task_flow.py       # HTTP 服务器（静态文件 + REST API）
 │   │   ├── render_screenshot.py     # HTML → PNG 截图工具
 │   │   ├── embed_cjk_font.py        # 中文字体子集嵌入工具
 │   │   └── display_on_eink.py       # PNG → 墨水屏显示工具
@@ -63,16 +70,21 @@ reTerminal/
 pip install -r requirements.txt
 ```
 
-核心生成器仅依赖 Python 内置模块（`csv`/`json`/`urllib`），无需额外安装。截图和墨水屏功能需可选依赖：
+核心生成器仅依赖 Python 内置模块（`csv`/`json`/`urllib`/`http.server`），无需额外安装。以下为可选依赖：
 
 ```bash
 # 可选：截图工具
 pip install playwright
 playwright install chromium
 
+# 可选：中文字体子集嵌入（generate_dashboard.py 默认启用，缺少则自动跳过并在终端提示）
+pip install fonttools brotli
+
 # 可选：墨水屏显示（仅在 reTerminal 设备上需要）
 pip install Pillow
 ```
+
+> 字体嵌入能让墨水屏在**没有中文字体**的情况下也正常显示中文，建议安装。缺 `fonttools`/`brotli` 时不会报错，只会打印 `[WARN] 中文字体嵌入失败，已跳过`。
 
 ### 2. 生成看板
 
@@ -125,8 +137,10 @@ python src/generators/generate_tasks_view.py
 python src/utils/serve_task_flow.py --port 8080
 
 # 浏览器访问
-# http://localhost:8080/tasks_view.html   任务清单
-# http://localhost:8080/task_flow.html    流程跟踪树
+# http://localhost:8080/tasks_view.html            任务清单
+# http://localhost:8080/task_flow.html             流程跟踪树
+# http://localhost:8080/project/project_index.html 项目索引
+# http://localhost:8080/project/project_tree.html  项目 DAG 图
 ```
 
 服务器提供 REST API，支持以下操作：
@@ -140,6 +154,16 @@ python src/utils/serve_task_flow.py --port 8080
 | `POST /api/add_task` | 添加新任务 |
 | `POST /api/delete_task` | 删除任务 |
 | `POST /api/complete_task` | 一键完成任务 |
+| `GET /api/projects` | 获取所有项目（DAG 节点 + 边 + 派生进度） |
+| `POST /api/project/add` | 新建项目 |
+| `POST /api/project/edit` | 修改项目信息 |
+| `POST /api/project/delete` | 删除项目（支持批量） |
+| `POST /api/pnode/add` | 新增项目节点（自动建立 `parent → 新节点` 的边） |
+| `POST /api/pnode/edit` | 修改项目节点 |
+| `POST /api/pnode/delete` | 删除项目节点及关联边 |
+| `POST /api/pnode/link` | 建立多上游连线（带环路检测） |
+| `POST /api/pnode/unlink` | 断开一条连线 |
+| `POST /api/pnode/done` | 标记 / 取消完成项目节点 |
 
 页面特性：
 
@@ -147,6 +171,46 @@ python src/utils/serve_task_flow.py --port 8080
 - **跨页面导航**：tasks_view 每张卡片有 🌳 按钮跳转到 task_flow 对应任务
 - **一键完成**：未完成任务卡片有 ✅ 按钮，点击即标记为完成
 - **流程节点管理**：支持添加/编辑/删除节点，弹窗表单填写阶段、日期、进度、负责人、备注
+
+### 3.6 项目管理（DAG）
+
+项目数据采用 **DAG（有向无环图）** 结构：每个项目由扁平的**节点表**（`nodes`）和**边表**（`edges`）组成，**一个节点可以有多个上游**，因此能表达"多个模块的成果汇聚到同一个节点"这类依赖关系。
+
+```bash
+# 生成项目页面
+python src/generators/generate_project.py
+
+# 通过本地服务器访问（需先启动 serve_task_flow.py）
+python src/utils/serve_task_flow.py --port 8080
+# http://localhost:8080/project/project_index.html   项目索引
+# http://localhost:8080/project/project_tree.html    项目 DAG 图
+```
+
+**项目索引页** — 卡片展示每个项目的分类、优先级、整体进度、节点完成数、负责人、目标日期：
+
+| 操作 | 说明 |
+|------|------|
+| `＋ 新建项目` | 填写名称 / 分类 / 优先级 / 负责人 / 周期 / 目标 |
+| `✏️`（卡片右上角，悬停显示） | 修改项目信息 |
+| 勾选框 + `删除选中项目` | 批量删除项目 |
+
+**项目 DAG 图** — 从左到右展示项目从起点到结束的完整拓扑，节点悬停出现操作按钮：
+
+| 按钮 | 作用 |
+|------|------|
+| `＋` | 添加下游节点 |
+| `🔗` | 连接到其它节点（建立额外上游，实现**多路汇聚**） |
+| `✏️` | 编辑节点（名称 / 类型 / 负责人 / 日期 / 进度 / 备注） |
+| `✅` | 标记完成 / 取消完成 |
+| `🗑️` | 删除节点及其专属下游（被多个上游共享的节点会保留） |
+
+**节点类型**：项目 / 里程碑 / 任务 / 交付物 / **结束节点**（布局上强制排在最后一列）。
+
+**进度规则**（按优先级）：完成日期 > 手工填写 > 关联任务平均 > 下游节点平均 > 0。
+
+> **怎么做多路汇聚**：例如三个模块开发完成后统一进入「集成联调」——先在其中一条分支下点 `＋` 新建该节点，再到另外两个模块上分别点 `🔗` 选中它即可。注意连线语义是**「当前节点 → 目标节点」**（当前节点在上游），方向别选反了，否则层级会颠倒。
+
+详细设计（布局算法、删除语义、已知坑）见 [docs/design/project-management-design.md](docs/design/project-management-design.md)。
 
 ### 4. 截图为 PNG
 
@@ -221,6 +285,12 @@ python src/generators/generate_dashboard.py --all
 | `--open` | 生成后打开浏览器预览 | 关闭 |
 
 ### `src/generators/generate_task_flow.py`
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--open` | 生成后打开浏览器预览 | 关闭 |
+
+### `src/generators/generate_project.py`
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
@@ -307,10 +377,52 @@ date,checkin,content,yesterday,today
 - `name`：任务名称
 - `date`：创建日期（`YYYY/MM/DD`）
 - `priority`：`high` / `medium` / `low`
-- `category`：任务分类（`科研` / `工程` / `标准` / `专利` / `个人`）
+- `category`：任务分类（`科研` / `工程` / `标准` / `专利` / `个人` / `管理`）
 - `nodes`：流程节点列表，每个节点包含 `phase`（阶段）、`date`、`progress`（0~100）、`note`（可选）、`owner`（可选）
 
 派生字段（由 `read_tasks()` 计算，不存储在 JSON 中）：`finished`、`status`、`total_days`、`stalled`、`days_from_prev`
+
+### `data/projects.json`
+
+项目数据，采用 **DAG（有向无环图）** 结构。每个项目含扁平的节点表和边表，`root` 指向根节点 id：
+
+```json
+{
+  "id": "P01",
+  "name": "天地承载网规划优化工具",
+  "category": "工程",
+  "owner": "李佳伟",
+  "priority": "high",
+  "start": "2026/09/14",
+  "target": "2026/11/30",
+  "goal": "集成已有成果，形成演示demo",
+  "root": "P01",
+  "nodes": [
+    {
+      "id": "P01-C2-C1",
+      "name": "完成“评估子系统”开发",
+      "kind": "task",
+      "owner": "李佳伟",
+      "plan": "2026/09/30",
+      "actual": "",
+      "note": "",
+      "tasks": [],
+      "progress": 80
+    }
+  ],
+  "edges": [
+    { "from": "P01-C2-C1", "to": "P01-C2-C4" },
+    { "from": "P01-C2-C2", "to": "P01-C2-C4" }
+  ]
+}
+```
+
+- `nodes[].kind`：`project` / `milestone` / `task` / `deliverable` / `end`
+- `nodes[].progress`：手工进度（可选）。不填时按下游节点或关联任务汇总
+- `nodes[].tasks`：关联任务编号，引用 `task_flows.json` 的 `no`（可选）
+- `edges[]`：每条边表示一次「上游 → 下游」的依赖；**一个节点有几条入边就有几个上级**
+
+> 旧版的嵌套树格式（`root` 为对象 + `children` 数组）会在读取时**自动迁移**成新格式，无需手工转换。
 
 ### `data/goals.csv`
 
@@ -373,12 +485,14 @@ python -m http.server 8080
 # http://localhost:8080/dashboard/dashboard_cyberpunk.html 赛博朋克
 # http://localhost:8080/dashboard/dashboard_light.html     浅色
 
-# 方式二：任务页面专用服务器（支持增删改 API）
+# 方式二：任务/项目页面专用服务器（支持增删改 API）
 python src/utils/serve_task_flow.py --port 8080
 
 # 浏览器访问
-# http://localhost:8080/tasks_view.html   任务清单
-# http://localhost:8080/task_flow.html    流程跟踪树
+# http://localhost:8080/tasks_view.html            任务清单
+# http://localhost:8080/task_flow.html             流程跟踪树
+# http://localhost:8080/project/project_index.html 项目索引
+# http://localhost:8080/project/project_tree.html  项目 DAG 图
 ```
 
 ## 技术细节
@@ -389,6 +503,7 @@ python src/utils/serve_task_flow.py --port 8080
 - **任务双段条**：每条任务一个 `.bar` 内含两段 `.seg`（昨天实色 + 今天半透明），合计宽度 = 任务总进度
 - **月历**：周一起算，`.cell` 高 14px / 字号 10px，今天黄色高亮，已打卡绿色
 - **动态日期**：`<script>` 在浏览器端用 `new Date()` 覆盖服务端生成时的日期
+- **枚举单一来源**：分类、优先级、任务状态、项目节点类型统一在 `src/generators/meta.py` 定义，生成器通过 `meta.js()` 注入到页面，下拉选项也由 Python 循环生成。**新增一个分类只需改 `meta.py` 一处**；流程页还会从数据里动态收集实际出现的分类，即使漏改也不会丢数据
 
 ## 硬件要求
 

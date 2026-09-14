@@ -21,7 +21,6 @@ reTerminal E1002 墨水屏显示工具
 
 import argparse
 import sys
-import time
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent  # 项目根目录（src/utils/ 的祖父目录）

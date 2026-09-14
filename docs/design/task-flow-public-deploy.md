@@ -32,16 +32,19 @@ data/task_flows.json（读写）
 
 ## 部署步骤
 
-### 1. serve_task_flow.py 支持 --host（默认 0.0.0.0）
+### 1. serve_task_flow.py 支持 --host（默认 0.0.0.0）与多线程
 
-`src/utils/serve_task_flow.py` 的 `main()` 增加 host 参数：
+`src/utils/serve_task_flow.py` 的 `main()` 增加 host 参数，并改用多线程服务器：
 
 ```python
 parser.add_argument("--host", type=str, default="0.0.0.0", help="监听地址 (默认 0.0.0.0)")
-server = HTTPServer((args.host, args.port), TaskFlowHandler)
+server = ThreadingHTTPServer((args.host, args.port), TaskFlowHandler)
+server.daemon_threads = True
 ```
 
-> 必须监听 0.0.0.0 而非 127.0.0.1：nginx 容器通过网关 `172.18.0.1` 访问宿主机，127.0.0.1 只监听回环、网关访问不到。
+> **必须监听 0.0.0.0 而非 127.0.0.1**：nginx 容器通过网关 `172.18.0.1` 访问宿主机，127.0.0.1 只监听回环、网关访问不到。
+>
+> **必须用 `ThreadingHTTPServer`**：早期的 `HTTPServer` 是单线程，浏览器保持 keep-alive 连接就会把服务占满，后续请求全部挂起（表现为页面一直转圈/请求超时）。
 
 ### 2. nginx.conf 加 /api/ 反向代理
 
@@ -133,17 +136,39 @@ curl -s -X POST -H 'Content-Type: application/json' \
 | `/api/add_node` | POST | 给任务添加推进节点 |
 | `/api/edit_node` | POST | 编辑节点（phase/date/progress/note/owner）|
 | `/api/delete_node` | POST | 删除节点（空任务自动清理）|
+| `/api/projects` | GET | 读取全部项目（DAG 节点 + 边 + 派生进度）|
+| `/api/project/add` | POST | 新建项目 |
+| `/api/project/edit` | POST | 修改项目信息 |
+| `/api/project/delete` | POST | 删除项目（支持批量）|
+| `/api/pnode/add` | POST | 新增项目节点（自动建边）|
+| `/api/pnode/edit` | POST | 修改项目节点 |
+| `/api/pnode/delete` | POST | 删除项目节点及关联边 |
+| `/api/pnode/link` | POST | 建立多上游连线（带环路检测）|
+| `/api/pnode/unlink` | POST | 断开一条连线 |
+| `/api/pnode/done` | POST | 标记/取消完成项目节点 |
 
 ## 已知限制
 
 - 公网 API **无鉴权**（个人博客，暂不设防；如需保护可加 CF Access 门禁或 nginx token 校验）
-- 页面打开时若 API 不可达，自动 fallback 到内嵌 `EMBEDDED_TASKS` 数据（只读快照）
-- 编辑后需重新生成 HTML（`src/generators/generate_tasks_view.py` + `generate_task_flow.py`）才能更新博客静态页的内嵌快照；API 数据则是实时读写 task_flows.json
+- nginx 只反代了 `location /api/`，**项目页面 `/project/*` 未反代**，公网上访问不到（本地开发用 `http://localhost:8080/project/...`）
+- 页面打开时若 API 不可达，自动 fallback 到内嵌 `EMBEDDED_TASKS` / `EMBEDDED` 数据（只读快照）
+- 编辑后需重新生成 HTML（`generate_tasks_view.py` + `generate_task_flow.py` + `generate_project.py`）才能更新博客静态页的内嵌快照；API 数据则是实时读写 `task_flows.json` / `projects.json`
+
+### 安全加固记录
+
+| 项 | 说明 |
+|---|---|
+| 目录穿越防护 | `/project/xxx` 经 `os.path.realpath` 归属校验，`..%2f..%2fdata/projects.json` 之类的请求返回 404 |
+| 多线程 | 改用 `ThreadingHTTPServer`，避免 keep-alive 连接占满单线程服务 |
+| 请求体容错 | `_read_body()` 解析失败返回 `{}`，非法的 `index` / `progress` 参数走 `_to_int()` 兜底，不再抛异常中断连接 |
+| 监听地址 | 默认 `0.0.0.0`（反代需要）；仅本机使用时建议显式 `--host 127.0.0.1` |
 
 ## 相关文件
 
 - `src/utils/serve_task_flow.py` — HTTP 服务 + API
-- `src/generators/generate_task_flow.py` — 数据读取/写入函数（read_tasks / read_tasks_raw / write_tasks_raw）
+- `src/generators/generate_task_flow.py` — 任务数据读取/写入函数（read_tasks / read_tasks_raw / write_tasks_raw）
+- `src/generators/generate_project.py` — 项目数据读取/写入函数（build_projects / add_node / link_node 等）
 - `data/task_flows.json` — 任务流程数据（动态编辑的落盘目标）
+- `data/projects.json` — 项目数据（DAG 结构，动态编辑的落盘目标）
 - `<home-dir>/Hugo-blog/nginx.conf` — 反向代理配置
 - `<home-dir>/.config/systemd/user/task-flow.service` — systemd 服务单元

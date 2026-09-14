@@ -35,34 +35,37 @@ TODAY_STR = date.today().strftime("%Y/%m/%d")
 # ----------------------------------------------------------------------------
 # 元数据
 # ----------------------------------------------------------------------------
-CATEGORY_ORDER = ["科研", "工程", "标准", "专利", "个人"]
-CATEGORY_ICON = {"科研": "🔬", "工程": "🔧", "标准": "📐", "专利": "💡", "个人": "👤"}
-
-STATUS_ORDER = ["未开始", "进行中", "已完成", "已暂停", "已取消"]
-STATUS_META = {
-    "未开始": {"icon": "○", "color": "#8893a7"},
-    "进行中": {"icon": "⏳", "color": "#d29922"},
-    "已完成": {"icon": "✅", "color": "#2e9e5b"},
-    "已暂停": {"icon": "⏸️", "color": "#7c6bc4"},
-    "已取消": {"icon": "❌", "color": "#999999"},
-}
-
-PRIORITY_META = {
-    "high": ("高", "#d6453d"),
-    "medium": ("中", "#3b6fb0"),
-    "low": ("低", "#2e9e5b"),
-}
+# 分类 / 优先级 / 状态 统一取自 meta.py, 避免各生成器各维护一份清单
+GEN_DIR = os.path.dirname(os.path.abspath(__file__))
+if GEN_DIR not in sys.path:
+    sys.path.insert(0, GEN_DIR)
+from meta import (  # noqa: E402
+    CATEGORY_FALLBACK_ICON,
+    CATEGORY_ICON,
+    CATEGORY_ORDER,
+    DEFAULT_PRIORITY,
+    PRIORITY_META,
+    PRIORITY_ORDER,
+    STATUS_META,
+    STATUS_ORDER,
+    collect_categories,
+    js,
+)
 
 
 # ----------------------------------------------------------------------------
 # 数据读取
 # ----------------------------------------------------------------------------
 def parse_date(s):
-    """解析 YYYY/MM/DD 为 date 对象。"""
-    m = re.match(r"(\d{4})/(\d{1,2})/(\d{1,2})", (s or "").strip())
-    if m:
+    """解析 YYYY/MM/DD 为 date 对象; 格式非法或日期不存在时返回 None。"""
+    m = re.match(r"(\d{4})/(\d{1,2})/(\d{1,2})$", (s or "").strip())
+    if not m:
+        return None
+    try:
         return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-    return None
+    except ValueError:
+        # 如 2026/09/31 —— 不存在的日期, 当作未设置, 避免拖垮整个接口
+        return None
 
 
 def read_tasks_raw():
@@ -83,8 +86,9 @@ def read_tasks():
     """读取 task_flows.json, 返回任务 dict 列表（含计算字段和流程节点）。"""
     raw = read_tasks_raw()
     if not raw:
-        print(f"[错误] {TASK_FLOWS_JSON} 中没有任务数据")
-        sys.exit(1)
+        # 库函数不终止进程: 调用方(生成器 / HTTP 服务)自行决定如何处理空数据
+        print(f"[警告] {TASK_FLOWS_JSON} 中没有任务数据，按空列表处理")
+        return []
 
     tasks = []
     for item in raw:
@@ -102,7 +106,8 @@ def read_tasks():
         completed_date = ""
         if nodes_raw:
             last = nodes_raw[-1]
-            if last.get("progress", 0) >= 100 and last.get("phase") in ("完成", "推进"):
+            # 最后一个节点进度达到 100% 即视为完成, 不限制阶段名称
+            if last.get("progress", 0) >= 100:
                 finished = True
                 completed_date = last.get("date", "")
 
@@ -172,21 +177,22 @@ def build_html(tasks):
     tasks = sorted(tasks, key=lambda t: int(t["no"]) if t["no"].isdigit() else 0)
     data_json = json.dumps(tasks, ensure_ascii=False).replace("</", "<\\/")
 
-    # 按分类统计（筛选按钮仍需要静态生成）
+    # 分类从数据动态收集: 数据里出现的新分类不会再被白名单漏掉
+    cats = collect_categories(tasks)
+
     cat_stats = {}
-    for cat in CATEGORY_ORDER:
+    for cat in cats:
         ct = [t for t in tasks if t["category"] == cat]
-        if ct:
-            cat_stats[cat] = {
-                "total": len(ct),
-                "done": sum(1 for t in ct if t["finished"]),
-                "avg_days": round(sum(t["total_days"] for t in ct if t["finished"]) / max(sum(1 for t in ct if t["finished"]), 1), 1),
-            }
+        cat_stats[cat] = {
+            "total": len(ct),
+            "done": sum(1 for t in ct if t["finished"]),
+            "avg_days": round(sum(t["total_days"] for t in ct if t["finished"]) / max(sum(1 for t in ct if t["finished"]), 1), 1),
+        }
 
     # 分类筛选按钮
     cat_btns = "".join(
-        f'<button class="fbtn" data-cat="{c}">{CATEGORY_ICON.get(c, "📁")} {c}</button>'
-        for c in CATEGORY_ORDER
+        f'<button class="fbtn" data-cat="{c}">{CATEGORY_ICON.get(c, CATEGORY_FALLBACK_ICON)} {c}</button>'
+        for c in cats
     )
     # 状态筛选按钮：data-st 用纯文本，避免 emoji 编码问题
     status_btns = "".join(
@@ -194,10 +200,7 @@ def build_html(tasks):
         for s in STATUS_ORDER
     )
 
-    pri_meta_json = json.dumps(
-        {"high": ["高", "#d6453d"], "medium": ["中", "#3b6fb0"], "low": ["低", "#2e9e5b"]},
-        ensure_ascii=False,
-    )
+    pri_meta_json = js({k: [v["short"], v["color"]] for k, v in PRIORITY_META.items()})
 
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -364,11 +367,11 @@ body{{background:#f5f6f8;font-family:-apple-system,"Segoe UI","PingFang SC","Mic
 <script>
 let TASKS = [];
 const EMBEDDED_TASKS = {data_json};
-const CAT_ORDER = {json.dumps(CATEGORY_ORDER, ensure_ascii=False)};
-const CAT_ICON = {json.dumps(CATEGORY_ICON, ensure_ascii=False)};
-const ST_META = {json.dumps(STATUS_META, ensure_ascii=False)};
+const CAT_ORDER = {js(cats)};
+const CAT_ICON = {js(CATEGORY_ICON)};
+const ST_META = {js(STATUS_META)};
 const PRI_META = {pri_meta_json};
-const PRI_ORD = {{high:0,medium:1,low:2}};
+const PRI_ORD = {js({k: i for i, k in enumerate(PRIORITY_ORDER)})};
 
 let curCat = 'all', curSt = 'all', curSort = 'default';
 
@@ -494,9 +497,13 @@ function render() {{
     return;
   }}
 
-  // 按分类分组
+  // 按分类分组: 以数据里实际出现的分类为准, 未预设的追加到末尾
+  const catList = CAT_ORDER.slice();
+  for (const t of filtered) {{
+    if (t.category && !catList.includes(t.category)) catList.push(t.category);
+  }}
   const groups = {{}};
-  for (const cat of CAT_ORDER) {{
+  for (const cat of catList) {{
     const items = sortTasks(filtered.filter(t => t.category === cat));
     if (items.length) groups[cat] = items;
   }}

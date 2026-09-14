@@ -13,3 +13,7 @@ output/*.bmp
 # 隐私数据不同步到 GitHub（2026-09-11）
 # 体重/健身打卡/任务/项目等个人数据仅保留本地
 data/
+
+# 任务/项目页面仅 NAS 本地部署，不同步 GitHub（2026-09-11）
+output/tasks/
+output/project/

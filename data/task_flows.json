@@ -803,5 +803,50 @@
         "owner": "李佳伟"
       }
     ]
+  },
+  {
+    "no": "40",
+    "name": "反馈意识形态阵地",
+    "date": "2026/09/14",
+    "priority": "low",
+    "category": "个人",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/09/14",
+        "progress": 50,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "41",
+    "name": "修复Elsevier论文订阅",
+    "date": "2026/09/14",
+    "priority": "low",
+    "category": "个人",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/09/14",
+        "progress": 100,
+        "note": ""
+      }
+    ]
+  },
+  {
+    "no": "42",
+    "name": "修复reterminal项目bug",
+    "date": "2026/09/14",
+    "priority": "medium",
+    "category": "个人",
+    "nodes": [
+      {
+        "phase": "创建",
+        "date": "2026/09/14",
+        "progress": 10,
+        "note": ""
+      }
+    ]
   }
 ]

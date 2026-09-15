@@ -46,6 +46,8 @@ f"onclick=\"func(\\'' + t.no + '\\')\""
 
 IDE 内嵌预览会屏蔽 `window.confirm()` —— 不弹框、直接返回 `false`，表现为"点了按钮没反应"；`alert()` 同样静默失败。所有页面的确认与提示统一用自绘的 `confirmBox()` 和 `toast()`。
 
+**现状（2026-09-15）**：`project_index.html`、`project_tree.html`、`tasks_view.html` 三个页面均已改用自绘弹窗。`tasks_view.html` 是最晚修的一个 —— 它的「一键完成」「删除任务」此前用原生 `confirm()`，所以点了完全没反应，且所有 `alert()` 报错也都看不见。**新增页面时务必沿用同一套 `toast()` / `confirmBox()`。**
+
 ## 项目数据是 DAG，不是树
 
 `data/projects.json` 用的是 **`nodes` 节点表 + `edges` 边表**（一个节点可以有多个上游），不是嵌套的 `children` 树。改代码时不要按树递归写；旧的树格式会在 `migrate_project()` 里自动迁移。详见 `docs/design/project-management-design.md`。

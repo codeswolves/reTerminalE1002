@@ -34,7 +34,7 @@
 | name | 任务名称 | — |
 | date | 创建日期 | 格式 YYYY/MM/DD |
 | priority | 优先级 | high / medium / low |
-| category | 任务分类 | 科研 / 工程 / 个人 / 标准 / 专利 |
+| category | 任务分类 | 科研 / 工程 / 标准 / 专利 / 个人 / 管理（枚举见 `src/generators/meta.py`） |
 | nodes | 流程节点列表 | 按时间顺序排列 |
 
 **节点（node）字段：**
@@ -49,7 +49,7 @@
 
 **派生字段**（由 `read_tasks()` 在读取时计算，不存储在 JSON 中）：
 
-- `finished`：最后节点 progress>=100 且 phase 为"完成"或"推进" → True
+- `finished`：**最后节点的 progress >= 100** 即视为完成（不看 phase 名称）
 - `status`：已完成 / 进行中 / 未开始
 - `total_days`：已完成 = 完成日期 - 创建日期；进行中 = 今天 - 创建日期
 - `stalled`：创建超 7 天且进度为 0 → 疑似停滞
@@ -121,6 +121,7 @@
 | `/api/edit_node` | POST | 编辑指定节点 |
 | `/api/delete_node` | POST | 删除指定节点 |
 | `/api/add_task` | POST | 添加新任务 |
+| `/api/edit_task` | POST | 编辑任务（名称 / 优先级 / 分类 / 负责人 / 备注 / 进度） |
 | `/api/delete_task` | POST | 删除任务 |
 | `/api/complete_task` | POST | 一键完成任务 |
 
@@ -133,8 +134,11 @@
 - **按创建时间排序**
 - **展开/折叠分类组**
 - **添加/编辑/删除节点**（弹窗表单）
+- **编辑任务**（✏️ 按钮）：名称 / 优先级 / 分类 / 负责人 / 备注 / 进度
 - **一键完成任务**（✅ 按钮）
+- **按分类分组展示**（tasks_view）：按 `category` 分组，组内未完成在前、已完成沉底
 - **跨页面导航**：tasks_view → task_flow（?task=No. 参数自动定位高亮）
+- **弹窗约定**：所有确认与提示使用自绘的 `confirmBox()` / `toast()`，**不要用原生 `confirm()` / `alert()`** —— 内嵌预览会屏蔽它们（`confirm` 恒返回 `false`），表现为按钮点了没反应
 
 ### 4.4 统计动态计算
 

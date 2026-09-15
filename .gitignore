@@ -17,3 +17,6 @@ data/
 # 任务/项目页面仅 NAS 本地部署，不同步 GitHub（2026-09-11）
 output/tasks/
 output/project/
+
+# 浏览器调试工具(playwright-cli)的临时目录
+.playwright-cli/

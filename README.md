@@ -20,7 +20,7 @@
 
 ```
 reTerminal/
-├── data/                        # 数据源
+├── data/                        # 数据源（⚠️ 不在仓库中，需自行准备，见上方注意事项）
 │   ├── weight.csv               # 体重记录
 │   ├── fitness.csv              # 健身打卡（含 yesterday/today 双段数据）
 │   ├── task_flows.json          # 任务流程数据（含元数据 + 流程节点）
@@ -36,7 +36,7 @@ reTerminal/
 │   ├── tasks/                   # 任务相关页面
 │   │   ├── tasks_view.html      # 任务清单可视化筛选页面
 │   │   └── task_flow.html       # 任务流程跟踪树页面
-│   └── project/                 # 项目相关页面
+│   └── project/                 # 项目相关页面（⚠️ 不在仓库中，需本地生成）
 │       ├── project_index.html   # 项目索引（新建/修改/删除项目）
 │       └── project_tree.html    # 项目 DAG 图（里程碑、多路汇聚、连线）
 ├── src/                         # 全部代码
@@ -61,6 +61,37 @@ reTerminal/
 │   └── notes/                   # 技术笔记
 └── requirements.txt
 ```
+
+## ⚠️ 注意事项（先读）
+
+### 仓库里**没有** `data/` 目录
+
+出于隐私原因，个人数据（体重、健身、任务、项目）不随仓库分发（见 `.gitignore`）。克隆后需要自己创建：
+
+```bash
+mkdir -p data
+```
+
+然后按下方「数据源格式」章节的说明准备 CSV / JSON 文件。**缺少数据文件时，生成器会报错或产出空看板。**
+
+### 部分页面需要本地生成
+
+`output/tasks/` 与 `output/project/` 下的页面内嵌了个人数据（任务名、责任人等），同样不随仓库分发：
+
+| 路径 | 内容 | 生成命令 |
+|------|------|---------|
+| `output/tasks/` | 任务清单、流程跟踪树 | `python src/generators/generate_tasks_view.py`<br>`python src/generators/generate_task_flow.py` |
+| `output/project/` | 项目索引、项目 DAG 图 | `python src/generators/generate_project.py` |
+
+仓库里**保留**的是 `output/dashboard/`（9 套主题看板）与 `output/screenshots/`，clone 后可直接打开预览。
+
+### 数据文件没有版本控制保护
+
+`data/` 已移出 git 跟踪，**误删无法用 git 找回**，建议定期另行备份（网盘 / 另一块盘）。
+
+### 多端协作推送
+
+本项目有多个提交来源（本地开发、NAS 定时任务等），**推送前必须先 `fetch` + `rebase`**，否则会被 GitHub 拒绝。规范见 [docs/notes/git-multi-end-collaboration.md](docs/notes/git-multi-end-collaboration.md)。
 
 ## 快速开始
 

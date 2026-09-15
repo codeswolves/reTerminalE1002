@@ -66,3 +66,50 @@ IDE 内嵌预览会屏蔽 `window.confirm()` —— 不弹框、直接返回 `fa
 ## 日期解析必须容错
 
 `parse_date()` 遇到 `2026/09/31` 这类不存在的日期必须返回 `None` 而不是抛异常 —— 一个脏日期会让 `/api/projects` 或 `/api/tasks` 整个接口返回空响应，前端 fetch 失败后静默回退到生成页面时的旧快照，表现成"改的东西没生效"。这个坑已踩过两次（`generate_project.py`、`generate_task_flow.py`）。
+
+## 隐私数据已脱离 git 管理（2026-09-14 起）
+
+`data/`、`output/tasks/`、`output/project/` 已加入 `.gitignore` 并移出跟踪（因为含**真实姓名、体重、健身、项目信息**）。由此带来几条必须记住的注意事项：
+
+### ① 这些文件现在是"未跟踪"状态，git 不再保护它们
+
+- 误删**无法**用 `git checkout` 找回，只能从更早的历史提交恢复
+- 建议定期手动备份到别处（网盘 / 另一块盘）
+
+### ② 常规 pull 不会删它们（已实测）
+
+`git restore`、`git pull --rebase` 之后文件都还在 —— 因为 git 的 pull / merge / rebase / checkout **只操作索引里已知的路径**，对未跟踪文件完全无视。
+
+### ③ 但有三个例外
+
+| 操作 | 后果 |
+|------|------|
+| 某端落后时又执行一次 `git rm --cached data/` 并推送 | 产生**新的删除提交** → 其他端 pull 时文件被删 ⚠️ |
+| `git clean -fdx` | **会连被忽略的文件一起删**，`data/` 直接清空 ⚠️ 最危险 |
+| `git clean -fd`（不带 `x`）、`git reset --hard`、`git checkout -f` | 安全 ✅ 不碰未跟踪文件 |
+
+### ④ pull 前自检（两秒）
+
+```bash
+git fetch github
+git diff --stat HEAD..github/master -- data/ output/tasks output/project
+# 输出为空 = 安全
+```
+
+更简单的判断：`git ls-files data/` 为空 ⇒ git 已经管不着它了。
+
+### ⑤ 万一被删，这样恢复
+
+```bash
+# 1. 从最后一个含这些文件的提交恢复
+git checkout <旧commit> -- data/ output/tasks/ output/project/
+# 2. 重新移出索引（保留刚恢复的文件），否则下次提交又会推上去
+git rm -r --cached -q data/ output/tasks/ output/project/
+```
+
+> 陷阱的完整分析见 `docs/notes/git-multi-end-collaboration.md` 第六节。
+
+### ⑥ 仍在同步的隐私内容（已知并接受）
+
+- `output/dashboard/*.html` —— 含体重、健身、目标进度
+- `output/screenshots/*.png` —— 含任务页面截图与姓名

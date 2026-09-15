@@ -221,6 +221,51 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
 
             self._send_json({"ok": True, "no": new_no})
 
+        elif path == "/api/edit_task":
+            data = self._read_body()
+            task_no = str(data.get("no", "")).strip()
+            if not task_no:
+                self._send_json({"ok": False, "error": "缺少任务编号"})
+                return
+
+            tasks = read_tasks_raw()
+            target = None
+            for item in tasks:
+                if str(item.get("no", "")) == task_no:
+                    target = item
+                    break
+            if target is None:
+                self._send_json({"ok": False, "error": f"任务 No.{task_no} 不存在"})
+                return
+
+            if "name" in data:
+                name = str(data.get("name") or "").strip()
+                if not name:
+                    self._send_json({"ok": False, "error": "任务名不能为空"})
+                    return
+                target["name"] = name
+            if "priority" in data:
+                target["priority"] = str(data.get("priority") or DEFAULT_PRIORITY).strip()
+            if "category" in data:
+                target["category"] = str(data.get("category") or DEFAULT_CATEGORY).strip()
+
+            nodes = target.setdefault("nodes", [])
+            if not nodes:
+                # 兜底: 老数据可能没有节点, 补一个创建节点来承载进度
+                nodes.append({"phase": "创建", "date": target.get("date", ""), "progress": 0})
+            # 进度存在最后一个节点上(任务进度 = 最后节点进度, 100% 即视为完成)
+            if "today" in data:
+                cur = self._to_int(nodes[-1].get("progress", 0), 0)
+                nodes[-1]["progress"] = max(0, min(100, self._to_int(data.get("today"), cur)))
+            # 责任人 / 备注存在创建节点上(与新增任务时的落点保持一致)
+            if "owner" in data:
+                nodes[0]["owner"] = str(data.get("owner") or "").strip()
+            if "note" in data:
+                nodes[0]["note"] = str(data.get("note") or "").strip()
+
+            write_tasks_raw(tasks)
+            self._send_json({"ok": True, "no": task_no})
+
         elif path == "/api/delete_task":
             data = self._read_body()
             task_no = str(data.get("no", "")).strip()

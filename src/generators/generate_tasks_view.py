@@ -32,11 +32,16 @@ GEN_DIR = os.path.join(BASE_DIR, "src", "generators")
 if GEN_DIR not in sys.path:
     sys.path.insert(0, GEN_DIR)
 from meta import (  # noqa: E402
+    CATEGORY_COLOR,
+    CATEGORY_FALLBACK_COLOR,
+    CATEGORY_FALLBACK_ICON,
+    CATEGORY_ICON,
     CATEGORY_ORDER,
     DEFAULT_CATEGORY,
     DEFAULT_PRIORITY,
     PRIORITY_META,
     PRIORITY_ORDER,
+    collect_categories,
     js,
 )
 from generate_task_flow import read_tasks  # noqa: E402
@@ -60,6 +65,16 @@ def build_html(tasks):
         % (k, " selected" if k == DEFAULT_PRIORITY else "", v["label"])
         for k, v in PRIORITY_META.items()
     )
+
+    # 分类分组的展示信息: 顺序取实际出现过的分类(未预设的自动追加末尾)
+    cat_order = collect_categories(tasks)
+    cat_meta = {
+        c: {
+            "icon": CATEGORY_ICON.get(c, CATEGORY_FALLBACK_ICON),
+            "color": CATEGORY_COLOR.get(c, CATEGORY_FALLBACK_COLOR),
+        }
+        for c in cat_order
+    }
 
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -142,7 +157,20 @@ def build_html(tasks):
   .del-task:hover {{ opacity: 1; color: #d6453d }}
   .done-task {{ font-size: 13px; cursor: pointer; opacity: .35; transition: opacity .15s; border: none; background: none; padding: 0 2px }}
   .done-task:hover {{ opacity: 1; color: #2e9e5b }}
-  .empty {{ text-align: center; color: #8893a7; padding: 60px 0; font-size: 14px; grid-column: 1 / -1; }}
+  .edit-task {{ font-size: 13px; cursor: pointer; opacity: .35; transition: opacity .15s; border: none; background: none; padding: 0 2px }}
+  .edit-task:hover {{ opacity: 1; color: #3b6fb0 }}
+  .empty {{ text-align: center; color: #8893a7; padding: 60px 0; font-size: 14px; }}
+
+  /* 分类分组 */
+  .section {{ margin-bottom: 30px; }}
+  .section:last-child {{ margin-bottom: 4px; }}
+  .section-head {{
+    display: flex; align-items: center; gap: 9px; margin-bottom: 13px; padding-bottom: 9px;
+    font-size: 14px; font-weight: 700; color: #1f2733; border-bottom: 2px solid #e8edf5;
+  }}
+  .section-head .sh-icon {{ font-size: 15px; flex: none; }}
+  .section-head .sh-cnt {{ font-weight: 400; font-size: 12px; color: #8893a7; }}
+  .section-head .sh-done {{ font-weight: 400; font-size: 12px; color: #2e9e5b; }}
 
   /* 添加任务按钮 */
   .add-task-btn {{
@@ -164,6 +192,18 @@ def build_html(tasks):
   .modal-actions button {{ padding: 7px 18px; border-radius: 8px; font-size: 13px; cursor: pointer; border: 1px solid #d8dee9; background: #fff; color: #3a4456; transition: all .15s; }}
   .modal-actions .btn-primary {{ background: #3b6fb0; color: #fff; border-color: #3b6fb0; }}
   .modal-actions .btn-primary:hover {{ background: #2d5a94; }}
+
+  /* 页面内提示条 / 确认框 (浏览器原生 alert/confirm 在部分内嵌预览里会被屏蔽) */
+  #toast {{
+    position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%) translateY(14px);
+    background: rgba(31,39,51,.93); color: #fff; font-size: 13px; padding: 10px 18px;
+    border-radius: 10px; opacity: 0; pointer-events: none; transition: all .22s;
+    z-index: 2000; max-width: 80vw; line-height: 1.5; box-shadow: 0 6px 22px rgba(0,0,0,.18);
+  }}
+  #toast.on {{ opacity: 1; transform: translateX(-50%) translateY(0); }}
+  #toast.ok {{ background: rgba(46,158,91,.95); }}
+  #toast.err {{ background: rgba(214,69,61,.95); }}
+  #cfm-msg {{ font-size: 13px; color: #5a6577; line-height: 1.6; }}
 </style>
 </head>
 <body>
@@ -191,7 +231,7 @@ def build_html(tasks):
     <button class="filter-btn" data-filter="low">低优先级<span class="cnt" id="cnt-low"></span></button>
   </div>
 
-  <div class="grid" id="grid"></div>
+  <div id="sections"></div>
 </div>
 
 <script>
@@ -200,6 +240,14 @@ const EMBEDDED_TASKS = {data_json};
 
 const PRIORITY = {js(PRIORITY_META)};
 const PRIO_ORDER = {js({k: i for i, k in enumerate(PRIORITY_ORDER)})};
+// 分类分组顺序(实际出现过的分类) 与展示信息(图标/颜色)
+const CAT_ORDER = {js(cat_order)};
+const CAT_META = {js(cat_meta)};
+
+function esc(s) {{
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}}
 
 // 任务创建时间转可比较数值 (YYYY/MM/DD)
 function dateVal(t) {{
@@ -240,55 +288,89 @@ function matches(t, f) {{
   }}
 }}
 
-function render(filter) {{
-  const grid = document.getElementById('grid');
-  if (!grid) return;
-  const list = TASKS.filter(t => matches(t, filter));
-  // 排序: 高 → 中 → 低优先级; "全部"标签下未完成任务在前
-  list.sort((a, b) => {{
-    // 高/中/低优先级标签: 只显示未完成任务, 按创建时间(升序)排序
+// 当前筛选
+let curFilter = 'all';
+
+// 单个任务卡片
+function cardHtml(t) {{
+  const p = PRIORITY[t.priority] || PRIORITY.medium;
+  const days = execDays(t);
+  const status = t.finished
+    ? '<span class="meta-done">✓ 已完成' + (t.completed_date ? ' · ' + t.completed_date : '') + '</span>'
+    : '<span>进行中</span>';
+  const timeInfo = days != null
+    ? '<span class="meta-time">' + (t.finished ? '执行时间：' + days + ' 天' : (days === 0 ? '今天创建' : '已进行 ' + days + ' 天')) + '</span>'
+    : '';
+  return `
+    <div class="card ${{t.finished ? 'done' : 'todo'}}">
+      <div class="card-head">
+        <div>
+          <div class="card-no">No.${{esc(t.no)}} · 创建于 ${{esc(t.date)}}</div>
+          <div class="card-name">${{esc(t.name)}}</div>
+        </div>
+        <span class="badge" style="color:${{p.color}};background:${{p.bg}}">${{p.label}}</span>
+      </div>
+      <div class="progress-row">
+        <div class="bar"><div class="bar-fill" style="width:${{t.today}}%;background:${{p.color}}"></div></div>
+        <span class="bar-pct">${{t.today}}%</span>
+      </div>
+      <div class="card-meta">${{status}}${{timeInfo}}
+        <a class="flow-link" href="task_flow.html?task=${{encodeURIComponent(t.no)}}" title="查看流程树">🌳</a>
+        <button class="edit-task" title="编辑任务" onclick="openEditTask('${{esc(t.no)}}')">✏️</button>
+                  ${{!t.finished ? '<button class="done-task" title="一键完成" onclick="completeTask(\\'' + esc(t.no) + '\\')">✅</button>' : ''}}
+        <button class="del-task" title="删除任务" onclick="deleteTask('${{esc(t.no)}}')">🗑️</button>
+      </div>
+    </div>`;
+}}
+
+// 排序: 高/中/低优先级标签按创建时间升序; 其余按 优先级 → 编号
+function sortList(list, filter) {{
+  return list.sort((a, b) => {{
     if (filter === 'high' || filter === 'medium' || filter === 'low') {{
       return dateVal(a) - dateVal(b);
     }}
     const pa = PRIO_ORDER[a.priority] != null ? PRIO_ORDER[a.priority] : 1;
     const pb = PRIO_ORDER[b.priority] != null ? PRIO_ORDER[b.priority] : 1;
     if (pa !== pb) return pa - pb;
-    if (filter === 'all' && a.finished !== b.finished) return a.finished ? 1 : -1;
     return (Number(a.no) || 0) - (Number(b.no) || 0);
   }});
-  if (!list.length) {{
-    grid.innerHTML = '<div class="empty">该筛选下暂无任务</div>';
-    return;
-  }}
-  grid.innerHTML = list.map(t => {{
-    const p = PRIORITY[t.priority] || PRIORITY.medium;
-    const days = execDays(t);
-    const status = t.finished
-      ? '<span class="meta-done">✓ 已完成' + (t.completed_date ? ' · ' + t.completed_date : '') + '</span>'
-      : '<span>进行中</span>';
-    const timeInfo = days != null
-      ? '<span class="meta-time">' + (t.finished ? '执行时间：' + days + ' 天' : (days === 0 ? '今天创建' : '已进行 ' + days + ' 天')) + '</span>'
-      : '';
-    return `
-      <div class="card ${{t.finished ? 'done' : 'todo'}}">
-        <div class="card-head">
-          <div>
-            <div class="card-no">No.${{t.no}} · 创建于 ${{t.date}}</div>
-            <div class="card-name">${{t.name}}</div>
-          </div>
-          <span class="badge" style="color:${{p.color}};background:${{p.bg}}">${{p.label}}</span>
-        </div>
-        <div class="progress-row">
-          <div class="bar"><div class="bar-fill" style="width:${{t.today}}%;background:${{p.color}}"></div></div>
-          <span class="bar-pct">${{t.today}}%</span>
-        </div>
-        <div class="card-meta">${{status}}${{timeInfo}}
-          <a class="flow-link" href="task_flow.html?task=${{t.no}}" title="查看流程树">🌳</a>
-                    ${{!t.finished ? '<button class="done-task" title="一键完成" onclick="completeTask(\\'' + t.no + '\\')">✅</button>' : ''}}
-          <button class="del-task" title="删除任务" onclick="deleteTask('${{t.no}}','${{t.name.replace(/'/g, "\\'")}}')">🗑️</button>
-        </div>
-      </div>`;
-  }}).join('');
+}}
+
+// 一个分类分组: 标题(图标 + 分类名 + 数量) + 卡片网格; 组内未完成在前
+function sectionHtml(cat, items, filter) {{
+  const meta = CAT_META[cat] || {{}};
+  const todo = sortList(items.filter(t => !t.finished), filter);
+  const done = sortList(items.filter(t => t.finished), filter);
+  const doneTag = done.length ? '<span class="sh-done">· 已完成 ' + done.length + '</span>' : '';
+  return `
+    <div class="section">
+      <div class="section-head">
+        <span class="sh-icon">${{meta.icon || '📁'}}</span>
+        <span>${{esc(cat)}}</span>
+        <span class="sh-cnt">${{items.length}} 个任务 ${{doneTag}}</span>
+      </div>
+      <div class="grid">${{todo.concat(done).map(cardHtml).join('')}}</div>
+    </div>`;
+}}
+
+function render(filter) {{
+  curFilter = filter;
+  const box = document.getElementById('sections');
+  if (!box) return;
+  const list = TASKS.filter(t => matches(t, filter));
+  if (!list.length) {{ box.innerHTML = '<div class="empty">该筛选下暂无任务</div>'; return; }}
+  // 按分类归组
+  const groups = {{}};
+  list.forEach(t => {{
+    const c = (t.category || '其他').trim() || '其他';
+    (groups[c] = groups[c] || []).push(t);
+  }});
+  // 分类顺序以 CAT_ORDER 为准, 数据里新增的分类追加到末尾
+  const cats = Object.keys(groups).sort((a, b) => {{
+    const ia = CAT_ORDER.indexOf(a), ib = CAT_ORDER.indexOf(b);
+    return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) || a.localeCompare(b);
+  }});
+  box.innerHTML = cats.map(c => sectionHtml(c, groups[c], filter)).join('');
 }}
 
 function init() {{
@@ -337,8 +419,39 @@ function updateStats() {{
   }}
 }}
 
-// 添加任务弹窗
+// 页面内提示条 / 确认框 (部分内嵌预览会屏蔽浏览器原生 alert/confirm,
+// 屏蔽后 confirm 恒返回 false, 表现为"点了没反应")
+let toastTimer = null;
+function toast(msg, type) {{
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'on' + (type ? ' ' + type : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {{ el.className = ''; }}, 2800);
+}}
+
+let confirmCb = null;
+function confirmBox(msg, onOk, okText) {{
+  confirmCb = onOk;
+  document.getElementById('cfm-msg').innerHTML = msg;
+  document.getElementById('cfm-ok').textContent = okText || '确定';
+  document.getElementById('cfm-bg').classList.remove('hide');
+}}
+
+function closeConfirm() {{
+  document.getElementById('cfm-bg').classList.add('hide');
+  confirmCb = null;
+}}
+
+// 添加 / 编辑任务弹窗 (两者共用同一套表单, 用 editingTaskNo 区分)
+let editingTaskNo = null;
+
 function openAddTask() {{
+  editingTaskNo = null;
+  document.getElementById('task-modal-title').textContent = '＋ 添加新任务';
+  document.getElementById('task-progress-label').textContent = '初始进度 (%)';
+  document.getElementById('task-submit-btn').textContent = '确认添加';
   document.getElementById('task-name').value = '';
   document.getElementById('task-priority').value = 'medium';
   document.getElementById('task-category').value = '个人';
@@ -347,9 +460,30 @@ function openAddTask() {{
   document.getElementById('task-owner').value = '';
   document.getElementById('add-modal-bg').classList.remove('hide');
 }}
+
+// 编辑任务: 回填任务级字段 + 创建节点上的责任人/备注 + 最后节点的进度
+function openEditTask(no) {{
+  const t = TASKS.find(x => String(x.no) === String(no));
+  if (!t) {{ toast('任务不存在', 'err'); return; }}
+  editingTaskNo = String(no);
+  document.getElementById('task-modal-title').textContent = '✏️ 编辑任务 No.' + no;
+  document.getElementById('task-progress-label').textContent = '当前进度 (%)';
+  document.getElementById('task-submit-btn').textContent = '保存修改';
+  document.getElementById('task-name').value = t.name || '';
+  document.getElementById('task-priority').value = t.priority || 'medium';
+  document.getElementById('task-category').value = t.category || '个人';
+  document.getElementById('task-progress').value = t.today || 0;
+  const first = (t.nodes && t.nodes[0]) || {{}};
+  document.getElementById('task-owner').value = first.owner || '';
+  document.getElementById('task-note').value = first.note || '';
+  document.getElementById('add-modal-bg').classList.remove('hide');
+}}
+
 function closeAddModal() {{
   document.getElementById('add-modal-bg').classList.add('hide');
+  editingTaskNo = null;
 }}
+
 function submitTask() {{
   const name = document.getElementById('task-name').value.trim();
   const priority = document.getElementById('task-priority').value;
@@ -357,44 +491,66 @@ function submitTask() {{
   const today = parseInt(document.getElementById('task-progress').value) || 0;
   const note = document.getElementById('task-note').value.trim();
   const owner = document.getElementById('task-owner').value.trim();
-  if (!name) {{ alert('请填写任务名称'); return; }}
-  fetch('/api/add_task', {{
+  if (!name) {{ toast('请填写任务名称', 'err'); return; }}
+  if (today < 0 || today > 100) {{ toast('进度请填 0-100 之间的数字', 'err'); return; }}
+  const isEdit = editingTaskNo !== null;
+  const payload = {{name, priority, category, today, note, owner}};
+  if (isEdit) payload.no = editingTaskNo;
+  fetch(isEdit ? '/api/edit_task' : '/api/add_task', {{
     method: 'POST',
     headers: {{'Content-Type': 'application/json'}},
-    body: JSON.stringify({{name, priority, category, today, note, owner}})
+    body: JSON.stringify(payload)
   }}).then(r => r.json()).then(data => {{
-    if (data.ok) {{ location.reload(); }}
-    else {{ alert(data.error || '添加失败'); }}
-  }}).catch(() => alert('连接服务器失败，请确认已启动 serve_task_flow.py'));
+    if (data.ok) {{
+      toast(isEdit ? '已保存修改' : '任务已添加', 'ok');
+      setTimeout(() => location.reload(), 600);   // 留一点时间让提示可见
+    }} else toast(data.error || (isEdit ? '保存失败' : '添加失败'), 'err');
+  }}).catch(() => toast('连接服务器失败，请确认已启动 serve_task_flow.py', 'err'));
 }}
+
+// 点遮罩关闭弹窗; 确认框按钮在 DOM 就绪后绑定(脚本位于弹窗 DOM 之前)
 document.addEventListener('click', e => {{
   if (e.target.id === 'add-modal-bg') closeAddModal();
+  if (e.target.id === 'cfm-bg') closeConfirm();
+}});
+document.addEventListener('DOMContentLoaded', () => {{
+  const ok = document.getElementById('cfm-ok');
+  if (ok) ok.onclick = () => {{ const fn = confirmCb; closeConfirm(); if (fn) fn(); }};
 }});
 
-// 一键完成任务
+// 一键完成任务 (自绘确认框: 原生 confirm 在部分内嵌预览里被屏蔽且恒返回 false)
 function completeTask(no) {{
-  if (!confirm('确认将任务 No.' + no + ' 标记为已完成？')) return;
-  fetch('/api/complete_task', {{
-    method: 'POST',
-    headers: {{'Content-Type': 'application/json'}},
-    body: JSON.stringify({{no}})
-  }}).then(r => r.json()).then(data => {{
-    if (data.ok) {{ location.reload(); }}
-    else {{ alert(data.error || '操作失败'); }}
-  }}).catch(() => alert('连接服务器失败'));
+  confirmBox('确认将任务 No.' + esc(no) + ' 标记为已完成？', () => {{
+    fetch('/api/complete_task', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{no}})
+    }}).then(r => r.json()).then(data => {{
+      if (data.ok) {{
+        toast('已标记完成', 'ok');
+        setTimeout(() => location.reload(), 600);
+      }} else toast(data.error || '操作失败', 'err');
+    }}).catch(() => toast('连接服务器失败', 'err'));
+  }}, '标记完成');
 }}
 
-// 删除任务
-function deleteTask(no, name) {{
-  if (!confirm('确认删除任务 No.' + no + ' ' + name + '？\\n\\n该操作将删除该任务及其全部流程节点，不可恢复。')) return;
-  fetch('/api/delete_task', {{
-    method: 'POST',
-    headers: {{'Content-Type': 'application/json'}},
-    body: JSON.stringify({{no}})
-  }}).then(r => r.json()).then(data => {{
-    if (data.ok) {{ location.reload(); }}
-    else {{ alert(data.error || '删除失败'); }}
-  }}).catch(() => alert('连接服务器失败'));
+// 删除任务 (任务名改为从 TASKS 里查, 不再拼接进 onclick 属性)
+function deleteTask(no) {{
+  const t = TASKS.find(x => String(x.no) === String(no));
+  if (!t) {{ toast('任务不存在', 'err'); return; }}
+  confirmBox('确认删除任务 No.' + esc(no) + ' 「' + esc(t.name) + '」？<br><br>'
+    + '该操作将删除该任务及其全部流程节点，不可恢复。', () => {{
+    fetch('/api/delete_task', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{no}})
+    }}).then(r => r.json()).then(data => {{
+      if (data.ok) {{
+        toast('已删除任务', 'ok');
+        setTimeout(() => location.reload(), 600);
+      }} else toast(data.error || '删除失败', 'err');
+    }}).catch(() => toast('连接服务器失败', 'err'));
+  }}, '删除');
 }}
 
 // 等 DOM 就绪再初始化, 避免元素未加载时出现空引用
@@ -408,7 +564,7 @@ if (document.readyState === 'loading') {{
 <!-- 添加任务弹窗 -->
 <div id="add-modal-bg" class="modal-bg hide">
   <div class="modal">
-    <h3>＋ 添加新任务</h3>
+    <h3 id="task-modal-title">＋ 添加新任务</h3>
     <label>任务名称</label>
     <input type="text" id="task-name" placeholder="如：完成XX论文编写">
     <label>优先级</label>
@@ -419,16 +575,30 @@ if (document.readyState === 'loading') {{
 {cat_options}    </select>
     <label>责任人</label>
     <input type="text" id="task-owner" placeholder="可选，填写负责人姓名">
-    <label>初始进度 (%)</label>
+    <label id="task-progress-label">初始进度 (%)</label>
     <input type="number" id="task-progress" min="0" max="100" value="0" placeholder="0-100">
     <label>备注</label>
     <textarea id="task-note" placeholder="可选，记录任务说明"></textarea>
     <div class="modal-actions">
       <button onclick="closeAddModal()">取消</button>
-      <button class="btn-primary" onclick="submitTask()">确认添加</button>
+      <button class="btn-primary" id="task-submit-btn" onclick="submitTask()">确认添加</button>
     </div>
   </div>
 </div>
+
+<!-- 操作确认弹窗 (替代浏览器原生 confirm, 后者在部分内嵌预览里被屏蔽) -->
+<div class="modal-bg hide" id="cfm-bg">
+  <div class="modal" style="width:370px">
+    <h3 id="cfm-title">确认操作</h3>
+    <div id="cfm-msg"></div>
+    <div class="modal-actions">
+      <button onclick="closeConfirm()">取消</button>
+      <button class="btn-primary" id="cfm-ok" style="background:#d6453d;border-color:#d6453d">确定</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
 </body>
 </html>
 """

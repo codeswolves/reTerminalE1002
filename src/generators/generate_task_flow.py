@@ -348,6 +348,10 @@ body{{background:#f5f6f8;font-family:-apple-system,"Segoe UI","PingFang SC","Mic
 /* 空态 */
 .empty{{text-align:center;color:#8893a7;padding:48px 0;font-size:14px}}
 
+/* 返回任务清单 */
+.back-link{{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#3b6fb0;text-decoration:none;margin-bottom:5px}}
+.back-link:hover{{text-decoration:underline}}
+
 /* 排序 */
 .sort-bar{{display:flex;gap:8px;align-items:center;margin-bottom:12px}}
 .sort-btn{{font-size:12px;color:#5a6577;cursor:pointer;padding:3px 10px;border-radius:12px;border:1px solid transparent;transition:all .15s}}
@@ -359,6 +363,7 @@ body{{background:#f5f6f8;font-family:-apple-system,"Segoe UI","PingFang SC","Mic
 <div class="wrap">
   <div class="hdr">
     <div>
+      <a class="back-link" href="https://www.jevylee.com/tasks_view.html">← 返回任务清单</a>
       <h1>🌳 任务流程跟踪树</h1>
       <div class="sub" id="sub"></div>
     </div>

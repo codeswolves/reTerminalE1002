@@ -353,10 +353,31 @@ body{{background:#f5f6f8;font-family:-apple-system,"Segoe UI","PingFang SC","Mic
 .back-link:hover{{text-decoration:underline}}
 
 /* 排序 */
-.sort-bar{{display:flex;gap:8px;align-items:center;margin-bottom:12px}}
+.sort-bar{{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}}
 .sort-btn{{font-size:12px;color:#5a6577;cursor:pointer;padding:3px 10px;border-radius:12px;border:1px solid transparent;transition:all .15s}}
 .sort-btn:hover{{border-color:#d8dee9}}
 .sort-btn.on{{background:#e8eef8;color:#3b6fb0;border-color:#c8d8ee;font-weight:600}}
+
+/* ---- 移动端适配 ---- */
+@media (max-width: 640px) {{
+  body {{ padding: 18px 14px 40px; }}
+  .hdr {{ flex-direction: column; align-items: stretch; gap: 12px; }}
+  .hdr > div:first-child {{ min-width: 0; }}
+  .hdr h1 {{ font-size: 20px; }}
+  .stats {{ width: 100%; }}
+  .st {{ flex: 1; min-width: 0; padding: 8px 6px; }}
+  .sep {{ display: none; }}
+  .task {{ padding: 14px; }}
+  .task-hdr {{ flex-wrap: wrap; }}
+  .rev-grid {{ grid-template-columns: 1fr; }}
+  .review {{ padding: 16px; }}
+  .modal {{ padding: 18px; }}
+}}
+
+/* 触屏没有 hover, 置顶与节点操作按钮默认太淡会点不到 */
+@media (hover: none) {{
+  .pin-btn, .node-act {{ opacity: .6; padding: 4px 6px; }}
+}}
 </style>
 </head>
 <body>

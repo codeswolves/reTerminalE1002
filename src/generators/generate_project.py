@@ -697,6 +697,25 @@ __COMMON_CSS__
 .delproj{color:#d6453d;border-color:#e6bcb9}
 .delproj:hover:not(:disabled){background:#d6453d;border-color:#d6453d;color:#fff}
 .delproj:disabled{opacity:.45;cursor:not-allowed}
+
+/* ---- 移动端适配 ---- */
+@media (max-width: 640px) {
+  body { padding: 18px 14px 40px; }
+  .hdr { flex-direction: column; align-items: stretch; gap: 12px; }
+  .hdr > div:first-child { min-width: 0; }
+  .hdr h1 { font-size: 20px; }
+  .stats { width: 100%; }
+  .st { flex: 1; min-width: 0; padding: 8px 6px; }
+  .grid { grid-template-columns: 1fr; }
+  .pcard { padding: 16px 16px 32px; }
+  .two { flex-direction: column; }
+  .modal { padding: 18px; }
+}
+
+/* 触屏没有 hover, 卡片右上角的编辑按钮会永远隐藏 */
+@media (hover: none) {
+  .pedit { opacity: .65; }
+}
 </style>
 </head>
 <body>
@@ -1090,6 +1109,24 @@ select{padding:5px 10px;border:1px solid #d8dee9;border-radius:8px;font-size:13p
 .modal-actions button{padding:7px 18px;border-radius:8px;font-size:13px;cursor:pointer;border:1px solid #d8dee9;background:#fff;color:#3a4456}
 .modal-actions .btn-primary{background:#3b6fb0;color:#fff;border-color:#3b6fb0}
 .hint{font-size:12px;color:#8893a7;margin-top:8px}
+
+/* ---- 移动端适配 ---- */
+@media (max-width: 640px) {
+  body { padding: 18px 14px 40px; }
+  .topbar { gap: 8px; }
+  .topbar .spacer { display: none; }
+  .back, select, .btn { padding: 8px 12px; }
+  .pmeta { padding: 14px 16px; }
+  .pmeta h1 { font-size: 18px; }
+  .canvas-wrap { max-height: none; }
+  .modal { padding: 18px; }
+}
+
+/* 触屏没有 hover, 节点右下角的操作按钮会永远隐藏 */
+@media (hover: none) {
+  .pn-acts { opacity: 1; }
+  .pn-act { opacity: .8; padding: 4px 6px; }
+}
 </style>
 </head>
 <body>

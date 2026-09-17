@@ -93,6 +93,10 @@ def build_html(tasks):
   }}
   .wrap {{ max-width: 960px; margin: 0 auto; }}
 
+  /* 顶部标题行: 窄屏时靠媒体查询换成纵向堆叠 */
+  .head-left {{ display: flex; align-items: center; min-width: 0; }}
+  .head-title {{ min-width: 0; }}
+
   /* 顶部 */
   .header {{
     display: flex; align-items: flex-end; justify-content: space-between;
@@ -220,13 +224,39 @@ def build_html(tasks):
   #toast.ok {{ background: rgba(46,158,91,.95); }}
   #toast.err {{ background: rgba(214,69,61,.95); }}
   #cfm-msg {{ font-size: 13px; color: #5a6577; line-height: 1.6; }}
+
+  /* ---- 移动端适配 ----
+     窄屏下横向 header 会把 title / 按钮挤成逐字竖排, 这里改为分层堆叠 */
+  @media (max-width: 640px) {{
+    body {{ padding: 18px 14px 40px; }}
+    .header {{ flex-direction: column; align-items: stretch; gap: 14px; }}
+    .head-left {{ flex-wrap: wrap; }}
+    .head-title {{ flex: 1 1 100%; }}
+    .title {{ font-size: 22px; white-space: nowrap; }}
+    .subtitle {{ font-size: 12px; }}
+    .add-task-btn {{ margin-left: 0; white-space: nowrap; }}
+    .proj-link {{ margin-left: 8px; }}
+    .stats {{ width: 100%; }}
+    .stat {{ flex: 1; min-width: 0; padding: 8px 6px; }}
+    .filters {{ gap: 8px; margin-bottom: 16px; }}
+    .filter-btn {{ padding: 6px 12px; font-size: 12px; }}
+    .grid {{ grid-template-columns: 1fr; }}
+    .section-head {{ flex-wrap: wrap; }}
+    .two {{ flex-direction: column; }}
+    .modal {{ padding: 18px; }}
+  }}
+
+  /* 触屏没有 hover, 操作按钮不要藏得太深, 同时放大点击区域 */
+  @media (hover: none) {{
+    .flow-link, .edit-task, .done-task, .del-task {{ opacity: .6; padding: 4px 6px; }}
+  }}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="header">
-    <div style="display:flex;align-items:center">
-      <div>
+    <div class="head-left">
+      <div class="head-title">
         <div class="title">任务清单</div>
         <div class="subtitle" id="subtitle"></div>
       </div>

@@ -365,7 +365,7 @@ body{{background:#f5f6f8;font-family:-apple-system,"Segoe UI","PingFang SC","Mic
   .hdr > div:first-child {{ min-width: 0; }}
   .hdr h1 {{ font-size: 20px; }}
   .stats {{ width: 100%; }}
-  .st {{ flex: 1; min-width: 0; padding: 8px 6px; }}
+  .st {{ padding: 8px 6px; }}
   .sep {{ display: none; }}
   .task {{ padding: 14px; }}
   .task-hdr {{ flex-wrap: wrap; }}

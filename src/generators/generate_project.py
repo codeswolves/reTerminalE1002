@@ -705,7 +705,7 @@ __COMMON_CSS__
   .hdr > div:first-child { min-width: 0; }
   .hdr h1 { font-size: 20px; }
   .stats { width: 100%; }
-  .st { flex: 1; min-width: 0; padding: 8px 6px; }
+  .st { padding: 8px 6px; }
   .grid { grid-template-columns: 1fr; }
   .pcard { padding: 16px 16px 32px; }
   .two { flex-direction: column; }

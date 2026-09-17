@@ -42,6 +42,14 @@ f"onclick=\"func(\\'' + t.no + '\\')\""
 - 模板里的 JS 尽量**不要用反斜杠转义**；确实要换行就避免，或改用 `String.fromCharCode(10)`
 - JS 正则里的 `\d` 会触发 Python `SyntaxWarning`，改用 `[0-9]`
 
+## 页面渲染：要转义 + onclick 不要拼参数（2026-09-17）
+
+任务名 / 备注 / 负责人 都是用户输入，可能含 `<`、`&`、引号，处理规则：
+
+1. **插入 HTML 前用 `esc()` 转义** —— 名字里出现 `<b>` 会被浏览器当标签解析，直接破版
+2. **不要把名字拼进 `onclick` 属性** —— `onclick="openAddNode('3','DBA's')"` 里的单引号会让 JS 字符串提前闭合，**按钮整个失效**。正确做法：只传编号，函数内用 `TASKS.find()` 查名字（`tasks_view` 和 `task_flow` 都踩过）
+3. **`<input type="date">` 只接受 `YYYY-MM-DD`** —— 赋 `2026/09/17` 会被浏览器静默丢弃（输入框空白，控制台一条 WARNING）。提交时再 `.replace(/-/g, '/')` 转成数据格式 `YYYY/MM/DD`；编辑弹窗那侧原来是对的，新增弹窗漏了转换
+
 ## 页面弹窗：不要用原生 alert / confirm
 
 IDE 内嵌预览会屏蔽 `window.confirm()` —— 不弹框、直接返回 `false`，表现为"点了按钮没反应"；`alert()` 同样静默失败。所有页面的确认与提示统一用自绘的 `confirmBox()` 和 `toast()`。

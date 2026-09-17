@@ -35,6 +35,7 @@
 | date | 创建日期 | 格式 YYYY/MM/DD |
 | priority | 优先级 | high / medium / low |
 | category | 任务分类 | 科研 / 工程 / 标准 / 专利 / 个人 / 管理（枚举见 `src/generators/meta.py`） |
+| pinned | 是否置顶 | 可选，`true` 表示"当前重点"；页面 📌 按钮切换，取消时字段直接移除 |
 | nodes | 流程节点列表 | 按时间顺序排列 |
 
 **节点（node）字段：**
@@ -122,6 +123,7 @@
 | `/api/delete_node` | POST | 删除指定节点 |
 | `/api/add_task` | POST | 添加新任务 |
 | `/api/edit_task` | POST | 编辑任务（名称 / 优先级 / 分类 / 负责人 / 备注 / 进度） |
+| `/api/pin_task` | POST | 置顶 / 取消置顶任务（当前重点） |
 | `/api/delete_task` | POST | 删除任务 |
 | `/api/complete_task` | POST | 一键完成任务 |
 
@@ -137,6 +139,7 @@
 - **编辑任务**（✏️ 按钮）：名称 / 优先级 / 分类 / 负责人 / 备注 / 进度
 - **一键完成任务**（✅ 按钮）
 - **按分类分组展示**（tasks_view）：按 `category` 分组，组内未完成在前、已完成沉底
+- **任务置顶（当前重点）**：卡片 📌 按钮置顶 / 取消置顶；置顶任务抽到最前的「📌 当前重点」分区（跨分类），不在分类区重复出现；置顶多个时标题提示"建议一次只聚焦 1 个"
 - **跨页面导航**：tasks_view → task_flow（?task=No. 参数自动定位高亮）
 - **弹窗约定**：所有确认与提示使用自绘的 `confirmBox()` / `toast()`，**不要用原生 `confirm()` / `alert()`** —— 内嵌预览会屏蔽它们（`confirm` 恒返回 `false`），表现为按钮点了没反应
 

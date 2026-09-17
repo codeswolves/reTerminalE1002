@@ -188,6 +188,14 @@ def build_html(tasks):
   }}
   .add-task-btn:hover {{ background: #2d5a94; }}
 
+  /* 跳转到项目管理 */
+  .proj-link {{
+    background: #fff; color: #3b6fb0; border: 1px solid #c8d8ee; border-radius: 20px;
+    padding: 8px 16px; font-size: 13px; font-weight: 600; text-decoration: none;
+    margin-left: 10px; transition: all .15s; white-space: nowrap;
+  }}
+  .proj-link:hover {{ background: #e8eef8; border-color: #3b6fb0; }}
+
   /* 弹窗 */
   .modal-bg {{ position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 1000; }}
   .modal-bg.hide {{ display: none; }}
@@ -223,6 +231,7 @@ def build_html(tasks):
         <div class="subtitle" id="subtitle"></div>
       </div>
       <button class="add-task-btn" onclick="openAddTask()">＋ 添加任务</button>
+      <a class="proj-link" href="project_index.html" title="打开项目索引页">📁 项目管理</a>
     </div>
     <div class="stats">
       <div class="stat"><b id="stat-done">-</b><span>已完成</span></div>

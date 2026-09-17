@@ -19,6 +19,10 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 OUTPUT_DIR = os.path.join(BASE_DIR, "output", "tasks")
 PROJECT_DIR = os.path.join(BASE_DIR, "output", "project")
 
+# 项目页面文件名: 公网博客是把它们平铺在站点根目录(/project_index.html),
+# 本地则放在 output/project/ 下。两种写法都支持, 页面里的相对链接才能通用。
+PROJECT_PAGES = ("project_index.html", "project_tree.html")
+
 # 导入 generate_task_flow 的数据函数
 GEN_DIR = os.path.join(BASE_DIR, "src", "generators")
 if GEN_DIR not in sys.path:
@@ -106,6 +110,9 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
         elif path.startswith("/project/"):
             rel = unquote(path[len("/project/"):]) or "project_index.html"
             self._send_file(self._safe_project_path(rel))
+        elif path.lstrip("/") in PROJECT_PAGES:
+            # 兼容博客的平铺部署路径: /project_index.html -> output/project/project_index.html
+            self._send_file(self._safe_project_path(path.lstrip("/")))
         else:
             super().do_GET()
 

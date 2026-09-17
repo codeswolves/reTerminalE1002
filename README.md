@@ -155,6 +155,7 @@ python src/generators/generate_tasks_view.py --open
 - **排序规则**：默认按高 → 中 → 低优先级排列
 - **优先级标签**：高/中/低优先级仅显示未完成任务，并按创建时间排序（按钮计数同步为未完成数）
 - **执行时间**：每张卡片显示任务执行时间——已完成任务显示 `执行时间：N 天`（创建日 → 完成日），未完成任务显示 `已进行 N 天`（创建日 → 今天，随日期自动更新）
+- **计划周期与延期**：未完成任务卡片显示 `📅 09/01 → 10/15 · 剩 28 天`。已过期显示红色「已延期 N 天」、3 天内到期显示橙色「剩 N 天」、未设置则灰字「未设计划截止」；已完成任务不显示该行
 - **卡片操作**：🌳 查看流程树 / ✏️ **编辑任务** / ✅ 一键完成（仅未完成）/ 🗑️ 删除任务
 
 ### 3.5 任务流程跟踪树 & 本地服务器
@@ -185,7 +186,7 @@ python src/utils/serve_task_flow.py --port 8080
 | `POST /api/edit_node` | 编辑节点 |
 | `POST /api/delete_node` | 删除节点 |
 | `POST /api/add_task` | 添加新任务 |
-| `POST /api/edit_task` | 编辑任务（名称 / 优先级 / 分类 / 负责人 / 备注 / 进度） |
+| `POST /api/edit_task` | 编辑任务（名称 / 优先级 / 分类 / 负责人 / 进度 / 备注 / 计划开始 / 计划截止） |
 | `POST /api/pin_task` | 置顶 / 取消置顶任务（当前重点），入参 `{"no":"3","pinned":true}` |
 | `POST /api/delete_task` | 删除任务 |
 | `POST /api/complete_task` | 一键完成任务 |
@@ -404,6 +405,9 @@ date,checkin,content,yesterday,today
   "date": "2026/08/01",
   "priority": "high",
   "category": "工程",
+  "start": "2026/08/01",
+  "due": "2026/08/20",
+  "pinned": true,
   "nodes": [
     {"phase": "创建", "date": "2026/08/01", "progress": 70, "note": ""},
     {"phase": "完成", "date": "2026/08/01", "progress": 100, "note": "", "owner": "张三"}
@@ -413,12 +417,17 @@ date,checkin,content,yesterday,today
 
 - `no`：任务编号（字符串，自增）
 - `name`：任务名称
-- `date`：创建日期（`YYYY/MM/DD`）
+- `date`：创建日期（`YYYY/MM/DD`）—— 相当于任务的实际开始时间
 - `priority`：`high` / `medium` / `low`
 - `category`：任务分类（`科研` / `工程` / `标准` / `专利` / `个人` / `管理`）
+- `start`：**计划开始**日期（可选，`YYYY/MM/DD`）
+- `due`：**计划截止**日期（可选，`YYYY/MM/DD`）
+- `pinned`：是否置顶为「当前重点」（可选，布尔；取消置顶时字段会被移除）
 - `nodes`：流程节点列表，每个节点包含 `phase`（阶段）、`date`、`progress`（0~100）、`note`（可选）、`owner`（可选）
 
-派生字段（由 `read_tasks()` 计算，不存储在 JSON 中）：`finished`、`status`、`total_days`、`stalled`、`days_from_prev`
+派生字段（由 `read_tasks()` 计算，不存储在 JSON 中）：`finished`、`completed_date`、`status`、`total_days`、`stalled`、`days_from_prev`、`pinned`、`plan_days`、`days_left`、`delayed`
+
+> **任务的"结束时间"没有独立字段**：未完成时看 `due`（计划截止），完成后由最后一个流程节点的日期派生出 `completed_date`。`delayed`（是否延期）和 `days_left`（剩余天数）只对未完成任务计算。
 
 ### `data/projects.json`
 

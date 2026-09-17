@@ -60,6 +60,17 @@ IDE 内嵌预览会屏蔽 `window.confirm()` —— 不弹框、直接返回 `fa
 
 `data/projects.json` 用的是 **`nodes` 节点表 + `edges` 边表**（一个节点可以有多个上游），不是嵌套的 `children` 树。改代码时不要按树递归写；旧的树格式会在 `migrate_project()` 里自动迁移。详见 `docs/design/project-management-design.md`。
 
+## 任务 / 项目的时间字段对照（2026-09-17 补）
+
+| 含义 | 任务（`task_flows.json`） | 项目（`projects.json`） |
+|------|--------------------------|------------------------|
+| 计划开始 | `start` | `start` |
+| 计划截止 | `due` | `target` |
+| 实际开始 | `date`（创建日期） | —— |
+| 实际结束 | 最后一个流程节点的 `date` → 派生 `completed_date` | 节点的 `actual` |
+
+任务**没有**独立的"结束时间"字段：未完成时看 `due`，完成时间靠最后节点日期派生。派生字段 `plan_days` / `days_left` / `delayed` **只对未完成任务计算**（已完成的一律 `delayed=False`），所以给已完成任务填计划日期没有意义。这两个字段可留空，留空表示未设置。
+
 ## 分类 / 优先级枚举只有一份（`src/generators/meta.py`）
 
 所有分类、优先级、任务状态、项目节点类型的定义都在 `src/generators/meta.py`，**不要在各生成器里另写一份**。

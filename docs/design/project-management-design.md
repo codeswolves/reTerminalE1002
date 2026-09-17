@@ -176,6 +176,9 @@ for (let i = 1; i < arr.length; i++){                 // 避免同层重叠
 - 卡片上 `↑n` / `↓n` 显示上游 / 下游数量，便于识别汇聚点
 - 缩放、节点类型下拉（不含 `project`，编辑根节点时临时补上并锁定）
 
+两个页面均带移动端适配（窄屏单列 + 触屏放大点击区），规则见
+[移动端适配设计文档](mobile-responsive.md)。
+
 ## 6. REST API
 
 由 `src/utils/serve_task_flow.py` 提供：

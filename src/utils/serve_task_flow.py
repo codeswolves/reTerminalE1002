@@ -23,7 +23,7 @@ PROJECT_DIR = os.path.join(BASE_DIR, "output", "project")
 GEN_DIR = os.path.join(BASE_DIR, "src", "generators")
 if GEN_DIR not in sys.path:
     sys.path.insert(0, GEN_DIR)
-from generate_task_flow import read_tasks, read_tasks_raw, write_tasks_raw  # noqa: E402
+from generate_task_flow import parse_date, read_tasks, read_tasks_raw, write_tasks_raw  # noqa: E402
 from meta import DEFAULT_CATEGORY, DEFAULT_PRIORITY  # noqa: E402
 from generate_project import (  # noqa: E402
     build_projects,
@@ -248,6 +248,23 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
                 target["priority"] = str(data.get("priority") or DEFAULT_PRIORITY).strip()
             if "category" in data:
                 target["category"] = str(data.get("category") or DEFAULT_CATEGORY).strip()
+
+            # 计划周期: 传空值 = 清除该字段(未完成任务用它跟踪延期)
+            for key, label in (("start", "计划开始"), ("due", "计划截止")):
+                if key not in data:
+                    continue
+                v = str(data.get(key) or "").strip()
+                if v and parse_date(v) is None:
+                    self._send_json({"ok": False, "error": f"{label}日期不合法：{v}（格式 YYYY/MM/DD，或该日期不存在）"})
+                    return
+                if v:
+                    target[key] = v
+                else:
+                    target.pop(key, None)
+            s_d, d_d = parse_date(target.get("start", "")), parse_date(target.get("due", ""))
+            if s_d and d_d and d_d < s_d:
+                self._send_json({"ok": False, "error": "计划截止日期不能早于计划开始日期"})
+                return
 
             nodes = target.setdefault("nodes", [])
             if not nodes:

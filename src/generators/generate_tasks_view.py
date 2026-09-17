@@ -161,6 +161,14 @@ def build_html(tasks):
   .edit-task:hover {{ opacity: 1; color: #3b6fb0 }}
   .empty {{ text-align: center; color: #8893a7; padding: 60px 0; font-size: 14px; }}
 
+  /* 计划日期 (开始 → 截止) */
+  .plan-line {{ font-size: 11px; margin-top: 5px; color: #5a6577; }}
+  .plan-line.over {{ color: #d6453d; font-weight: 600; }}
+  .plan-line.soon {{ color: #b7791f; font-weight: 600; }}
+  .plan-line.none {{ color: #b0b8c6; }}
+  .two {{ display: flex; gap: 10px; }}
+  .two > div {{ flex: 1; min-width: 0; }}
+
   /* 分类分组 */
   .section {{ margin-bottom: 30px; }}
   .section:last-child {{ margin-bottom: 4px; }}
@@ -261,6 +269,12 @@ function parseDate(s) {{
   return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
 }}
 
+// YYYY/MM/DD -> MM/DD (卡片上紧凑显示计划日期)
+function fmtShort(s) {{
+  const m = String(s || '').split('/');
+  return m.length === 3 ? (m[1].padStart(2, '0') + '/' + m[2].padStart(2, '0')) : String(s || '');
+}}
+
 // 任务执行时间(天): 已完成=创建日→完成日, 未完成=创建日→今天
 function execDays(t) {{
   const start = parseDate(t.date);
@@ -301,6 +315,22 @@ function cardHtml(t) {{
   const timeInfo = days != null
     ? '<span class="meta-time">' + (t.finished ? '执行时间：' + days + ' 天' : (days === 0 ? '今天创建' : '已进行 ' + days + ' 天')) + '</span>'
     : '';
+  // 计划周期: 已完成的任务不再提示
+  let planHtml = '';
+  if (!t.finished) {{
+    if (t.due) {{
+      const left = t.days_left;
+      const cls = t.delayed ? 'over' : ((left != null && left <= 3) ? 'soon' : '');
+      const span = t.start ? (fmtShort(t.start) + ' → ' + fmtShort(t.due)) : ('截止 ' + fmtShort(t.due));
+      let tail = '';
+      if (t.delayed) tail = ' · 已延期 ' + Math.abs(left) + ' 天';
+      else if (left === 0) tail = ' · 今天到期';
+      else if (left != null) tail = ' · 剩 ' + left + ' 天';
+      planHtml = '<div class="plan-line ' + cls + '">📅 ' + span + tail + '</div>';
+    }} else {{
+      planHtml = '<div class="plan-line none">📅 未设计划截止</div>';
+    }}
+  }}
   return `
     <div class="card ${{t.finished ? 'done' : 'todo'}}">
       <div class="card-head">
@@ -314,6 +344,7 @@ function cardHtml(t) {{
         <div class="bar"><div class="bar-fill" style="width:${{t.today}}%;background:${{p.color}}"></div></div>
         <span class="bar-pct">${{t.today}}%</span>
       </div>
+      ${{planHtml}}
       <div class="card-meta">${{status}}${{timeInfo}}
         <a class="flow-link" href="task_flow.html?task=${{encodeURIComponent(t.no)}}" title="查看流程树">🌳</a>
         <button class="edit-task" title="编辑任务" onclick="openEditTask('${{esc(t.no)}}')">✏️</button>
@@ -456,6 +487,8 @@ function openAddTask() {{
   document.getElementById('task-priority').value = 'medium';
   document.getElementById('task-category').value = '个人';
   document.getElementById('task-progress').value = '0';
+  document.getElementById('task-start').value = '';
+  document.getElementById('task-due').value = '';
   document.getElementById('task-note').value = '';
   document.getElementById('task-owner').value = '';
   document.getElementById('add-modal-bg').classList.remove('hide');
@@ -473,6 +506,9 @@ function openEditTask(no) {{
   document.getElementById('task-priority').value = t.priority || 'medium';
   document.getElementById('task-category').value = t.category || '个人';
   document.getElementById('task-progress').value = t.today || 0;
+  // 数据存 YYYY/MM/DD, 而 <input type="date"> 只认 YYYY-MM-DD
+  document.getElementById('task-start').value = (t.start || '').split('/').join('-');
+  document.getElementById('task-due').value = (t.due || '').split('/').join('-');
   const first = (t.nodes && t.nodes[0]) || {{}};
   document.getElementById('task-owner').value = first.owner || '';
   document.getElementById('task-note').value = first.note || '';
@@ -491,10 +527,14 @@ function submitTask() {{
   const today = parseInt(document.getElementById('task-progress').value) || 0;
   const note = document.getElementById('task-note').value.trim();
   const owner = document.getElementById('task-owner').value.trim();
+  // <input type="date"> 给的是 YYYY-MM-DD, 而数据统一存 YYYY/MM/DD
+  const start = document.getElementById('task-start').value.split('-').join('/');
+  const due = document.getElementById('task-due').value.split('-').join('/');
   if (!name) {{ toast('请填写任务名称', 'err'); return; }}
   if (today < 0 || today > 100) {{ toast('进度请填 0-100 之间的数字', 'err'); return; }}
+  if (start && due && due < start) {{ toast('计划截止不能早于计划开始', 'err'); return; }}
   const isEdit = editingTaskNo !== null;
-  const payload = {{name, priority, category, today, note, owner}};
+  const payload = {{name, priority, category, today, note, owner, start, due}};
   if (isEdit) payload.no = editingTaskNo;
   fetch(isEdit ? '/api/edit_task' : '/api/add_task', {{
     method: 'POST',
@@ -577,6 +617,16 @@ if (document.readyState === 'loading') {{
     <input type="text" id="task-owner" placeholder="可选，填写负责人姓名">
     <label id="task-progress-label">初始进度 (%)</label>
     <input type="number" id="task-progress" min="0" max="100" value="0" placeholder="0-100">
+    <div class="two">
+      <div>
+        <label>计划开始 (可选)</label>
+        <input type="date" id="task-start">
+      </div>
+      <div>
+        <label>计划截止 (可选)</label>
+        <input type="date" id="task-due">
+      </div>
+    </div>
     <label>备注</label>
     <textarea id="task-note" placeholder="可选，记录任务说明"></textarea>
     <div class="modal-actions">

@@ -101,6 +101,12 @@ def read_tasks():
 
         create_d = parse_date(date_str)
 
+        # 计划周期(可选): 未完成任务用它跟踪进度、判断延期; 已完成的任务一般不需要填
+        plan_start = (item.get("start") or "").strip()
+        plan_due = (item.get("due") or "").strip()
+        start_d = parse_date(plan_start)
+        due_d = parse_date(plan_due)
+
         # 从节点推导完成状态
         finished = False
         completed_date = ""
@@ -167,6 +173,12 @@ def read_tasks():
             "stalled": stalled,
             # 置顶(当前重点): 由页面上的 📌 按钮写入 task_flows.json
             "pinned": bool(item.get("pinned")),
+            # 计划周期与延期判定(已完成的任务不参与延时计算)
+            "start": plan_start,
+            "due": plan_due,
+            "plan_days": (due_d - start_d).days if (due_d and start_d) else None,
+            "days_left": (due_d - date.today()).days if (due_d and not finished) else None,
+            "delayed": bool(due_d and not finished and due_d < date.today()),
             "json_backed": True,
         })
     return tasks
@@ -256,6 +268,9 @@ body{{background:#f5f6f8;font-family:-apple-system,"Segoe UI","PingFang SC","Mic
 .task-meta{{display:flex;gap:8px;align-items:center;flex:none}}
 .badge{{font-size:11px;font-weight:600;padding:2px 10px;border-radius:10px}}
 .time-tag{{font-size:11px;color:#5a6577;background:#f0f2f5;border-radius:8px;padding:2px 8px}}
+.plan-tag{{font-size:11px;color:#5a6577;background:#f0f2f5;border-radius:8px;padding:2px 8px;white-space:nowrap}}
+.plan-tag.over{{color:#d6453d;background:#fdeceb;font-weight:600}}
+.plan-tag.none{{color:#b0b8c6;background:#f7f8fa}}
 
 /* 置顶(当前重点) */
 .pin-btn{{font-size:14px;cursor:pointer;opacity:.25;transition:opacity .15s;line-height:1;user-select:none}}
@@ -434,6 +449,20 @@ function renderTree(t) {{
     ? `总耗时 <b>${{t.total_days}}</b> 天`
     : `已耗时 <b>${{t.total_days}}</b> 天`;
 
+  // 计划周期标签(已完成的任务不再提示)
+  let planTag = '';
+  if (!t.finished) {{
+    if (t.due) {{
+      const cls = t.delayed ? 'plan-tag over' : 'plan-tag';
+      const tail = t.delayed
+        ? ('已延期 ' + Math.abs(t.days_left) + ' 天')
+        : (t.days_left === 0 ? '今天到期' : ('剩 ' + t.days_left + ' 天'));
+      planTag = `<span class="${{cls}}" title="计划 ${{t.start || '未设'}} → ${{t.due}}">📅 ${{t.due}} · ${{tail}}</span>`;
+    }} else {{
+      planTag = '<span class="plan-tag none">📅 未设计划截止</span>';
+    }}
+  }}
+
   let nodesHtml = '';
   for (let _ni = 0; _ni < t.nodes.length; _ni++) {{
     const n = t.nodes[_ni];
@@ -474,9 +503,10 @@ function renderTree(t) {{
           <span class="tno">No.${{esc(t.no)}}</span>
         </div>
         <div class="task-meta">
+          ${{planTag}}
           <span class="badge" style="color:${{pm[1]}};background:${{pm[1]}}18">${{pm[0]}}优先级</span>
           <span class="time-tag">${{timeLabel}}</span>
-          <span class="pin-btn${{t.pinned ? ' on' : ''}}" title="${{t.pinned ? '取消置顶' : '置顶：设为当前重点'}}" onclick="togglePin('${{t.no}}')">📌</span>
+          <span class="pin-btn${{t.pinned ? ' on' : ''}}" title="${{t.pinned ? '取消置顶' : '置顶：设为当前重点'}}" onclick="togglePin('${{esc(t.no)}}')">📌</span>
         </div>
       </div>
       <div class="tree">${{nodesHtml}}</div>

@@ -165,6 +165,8 @@ def read_tasks():
             "total_days": total_days,
             "nodes": nodes,
             "stalled": stalled,
+            # 置顶(当前重点): 由页面上的 📌 按钮写入 task_flows.json
+            "pinned": bool(item.get("pinned")),
             "json_backed": True,
         })
     return tasks
@@ -255,6 +257,17 @@ body{{background:#f5f6f8;font-family:-apple-system,"Segoe UI","PingFang SC","Mic
 .badge{{font-size:11px;font-weight:600;padding:2px 10px;border-radius:10px}}
 .time-tag{{font-size:11px;color:#5a6577;background:#f0f2f5;border-radius:8px;padding:2px 8px}}
 
+/* 置顶(当前重点) */
+.pin-btn{{font-size:14px;cursor:pointer;opacity:.25;transition:opacity .15s;line-height:1;user-select:none}}
+.pin-btn:hover{{opacity:.7}}
+.pin-btn.on{{opacity:1}}
+.task.pinned{{border-color:#e0b055;box-shadow:0 0 0 3px rgba(210,153,34,.13);background:#fffdf8}}
+.task.pinned .tname{{color:#8a5d00}}
+.cat-group.pin-group{{margin-bottom:20px}}
+.cat-group.pin-group .cat-hdr .name{{color:#8a5d00}}
+.cat-group.pin-group .cat-hdr .cnt{{background:#fdf0d8;color:#8a5d00}}
+.pin-hint{{font-size:12px;color:#b7791f;font-weight:400}}
+
 /* 流程树 */
 .tree{{position:relative;padding-left:24px;margin-top:8px}}
 .tree::before{{content:"";position:absolute;left:9px;top:4px;bottom:4px;width:2px;background:#e3e8f0;border-radius:1px}}
@@ -298,6 +311,13 @@ body{{background:#f5f6f8;font-family:-apple-system,"Segoe UI","PingFang SC","Mic
 .modal-actions button{{padding:7px 18px;border-radius:8px;font-size:13px;cursor:pointer;border:1px solid #d8dee9;background:#fff;color:#3a4456;transition:all .15s}}
 .modal-actions .btn-primary{{background:#3b6fb0;color:#fff;border-color:#3b6fb0}}
 .modal-actions .btn-primary:hover{{background:#2d5a94}}
+
+/* 页面内提示条 / 确认框 (部分内嵌预览会屏蔽原生 alert/confirm) */
+#toast{{position:fixed;left:50%;bottom:34px;transform:translateX(-50%) translateY(14px);background:rgba(31,39,51,.93);color:#fff;font-size:13px;padding:10px 18px;border-radius:10px;opacity:0;pointer-events:none;transition:all .22s;z-index:2000;max-width:80vw;line-height:1.5;box-shadow:0 6px 22px rgba(0,0,0,.18)}}
+#toast.on{{opacity:1;transform:translateX(-50%) translateY(0)}}
+#toast.ok{{background:rgba(46,158,91,.95)}}
+#toast.err{{background:rgba(214,69,61,.95)}}
+.cfm-msg{{font-size:13px;color:#5a6577;line-height:1.6}}
 
 /* 底部复盘 */
 .review{{margin-top:32px;background:#fff;border:1px solid #e3e8f0;border-radius:12px;padding:20px 24px}}
@@ -401,6 +421,12 @@ function progColor(p) {{
   return '#d6453d';
 }}
 
+// HTML 转义: 任务名 / 备注 / 负责人 等可能含 < > & " , 直接插值会破版
+function esc(s) {{
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}}
+
 function renderTree(t) {{
   const sm = ST_META[t.status] || ST_META['进行中'];
   const pm = PRI_META[t.priority] || PRI_META.medium;
@@ -416,9 +442,9 @@ function renderTree(t) {{
       ? `<span class="node-gap">⏱ ${{n.days_from_prev}}天</span>` : '';
     const warn_html = (t.stalled && n.phase === '当前') ? '<span class="node-warn">⚠️ 疑似停滞</span>' : '';
     const pColor = progColor(n.progress);
-    const noteHtml = n.note ? `<div class="node-note">${{n.note}}</div>` : '';
-    const ownerHtml = n.owner ? `<span class="node-owner">👤 ${{n.owner}}</span>` : '';
-    const actHtml = t.json_backed ? `<span class="node-actions"><span class="node-act edit" title="编辑" onclick="openEditNode('${{t.no}}',${{_ni}})">✏️</span><span class="node-act del" title="删除" onclick="deleteNode('${{t.no}}',${{_ni}})">🗑️</span></span>` : '';
+    const noteHtml = n.note ? `<div class="node-note">${{esc(n.note)}}</div>` : '';
+    const ownerHtml = n.owner ? `<span class="node-owner">👤 ${{esc(n.owner)}}</span>` : '';
+    const actHtml = t.json_backed ? `<span class="node-actions"><span class="node-act edit" title="编辑" onclick="openEditNode('${{esc(t.no)}}',${{_ni}})">✏️</span><span class="node-act del" title="删除" onclick="deleteNode('${{esc(t.no)}}',${{_ni}})">🗑️</span></span>` : '';
     nodesHtml += `
       <div class="node">
         <div class="node-dot ${{nc}}"></div>
@@ -436,20 +462,21 @@ function renderTree(t) {{
     <div class="summary">
       📊 ${{t.finished ? '全流程总耗时' : '已耗时'}}: <b>${{t.total_days}}天</b>
       ${{t.stalled ? '&nbsp;<span class="node-warn">⚠️ 疑似停滞</span>' : ''}}
-      ${{!t.finished ? `<span class="add-btn" onclick="openAddNode('${{t.no}}','${{t.name}}')">＋ 添加节点</span>` : ''}}
+      ${{!t.finished ? `<span class="add-btn" onclick="openAddNode('${{esc(t.no)}}')">＋ 添加节点</span>` : ''}}
     </div>`;
 
   return `
-    <div class="task" data-no="${{t.no}}" data-cat="${{t.category}}" data-st="${{t.status}}" data-pri="${{t.priority}}" data-days="${{t.total_days}}" data-date="${{t.date}}">
+    <div class="task${{t.pinned ? ' pinned' : ''}}" data-no="${{t.no}}" data-cat="${{t.category}}" data-st="${{t.status}}" data-pri="${{t.priority}}" data-days="${{t.total_days}}" data-date="${{t.date}}">
       <div class="task-hdr">
         <div class="task-title">
           <span class="sicon">${{sm.icon}}</span>
-          <span class="tname">${{t.name}}</span>
-          <span class="tno">No.${{t.no}}</span>
+          <span class="tname">${{esc(t.name)}}</span>
+          <span class="tno">No.${{esc(t.no)}}</span>
         </div>
         <div class="task-meta">
           <span class="badge" style="color:${{pm[1]}};background:${{pm[1]}}18">${{pm[0]}}优先级</span>
           <span class="time-tag">${{timeLabel}}</span>
+          <span class="pin-btn${{t.pinned ? ' on' : ''}}" title="${{t.pinned ? '取消置顶' : '置顶：设为当前重点'}}" onclick="togglePin('${{t.no}}')">📌</span>
         </div>
       </div>
       <div class="tree">${{nodesHtml}}</div>
@@ -485,7 +512,7 @@ function sortTasks(list) {{
 
 function render() {{
   const container = document.getElementById('trees');
-  let filtered = TASKS.filter(t => {{
+  const filtered = TASKS.filter(t => {{
     if (curCat !== 'all' && t.category !== curCat) return false;
     if (curSt === 'unfinished') {{ if (t.finished) return false; }}
     else if (curSt !== 'all' && t.status !== curSt) return false;
@@ -497,19 +524,36 @@ function render() {{
     return;
   }}
 
-  // 按分类分组: 以数据里实际出现的分类为准, 未预设的追加到末尾
-  const catList = CAT_ORDER.slice();
-  for (const t of filtered) {{
-    if (t.category && !catList.includes(t.category)) catList.push(t.category);
-  }}
-  const groups = {{}};
-  for (const cat of catList) {{
-    const items = sortTasks(filtered.filter(t => t.category === cat));
-    if (items.length) groups[cat] = items;
+  let html = '';
+
+  // 置顶区: 跨分类排在最前, 便于聚焦当前重点
+  const pinned = sortTasks(filtered.filter(t => t.pinned));
+  if (pinned.length) {{
+    const hint = pinned.length > 1 ? '<span class="pin-hint">· 建议一次只聚焦 1 个</span>' : '';
+    html += `
+      <div class="cat-group pin-group">
+        <div class="cat-hdr" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('hide')">
+          <span class="icon">📌</span>
+          <span class="name">当前重点</span>
+          <span class="cnt">${{pinned.length}} 个任务</span>
+          ${{hint}}
+          <span class="arrow">▼</span>
+        </div>
+        <div class="cat-body">
+          ${{pinned.map(renderTree).join('')}}
+        </div>
+      </div>`;
   }}
 
-  let html = '';
-  for (const [cat, items] of Object.entries(groups)) {{
+  // 分类分组: 置顶的任务只在上面出现, 不在分类里重复
+  const rest = filtered.filter(t => !t.pinned);
+  const catList = CAT_ORDER.slice();
+  for (const t of rest) {{
+    if (t.category && !catList.includes(t.category)) catList.push(t.category);
+  }}
+  for (const cat of catList) {{
+    const items = sortTasks(rest.filter(t => t.category === cat));
+    if (!items.length) continue;
     const icon = CAT_ICON[cat] || '📁';
     const doneCnt = items.filter(t => t.finished).length;
     html += `
@@ -525,6 +569,7 @@ function render() {{
         </div>
       </div>`;
   }}
+
   container.innerHTML = html;
 }}
 
@@ -548,13 +593,13 @@ function renderReview() {{
   // 2. 超期 TOP5
   const topLong = [...done].sort((a,b) => b.total_days - a.total_days).slice(0, 5);
   let longHtml = topLong.map((t,i) =>
-    `<div>${{i+1}}. ${{t.name}} — <b>${{t.total_days}}天</b></div>`
+    `<div>${{i+1}}. ${{esc(t.name)}} — <b>${{t.total_days}}天</b></div>`
   ).join('') || '<div>暂无</div>';
 
   // 3. 停滞任务
   const stalled = TASKS.filter(t => t.stalled);
   let stalledHtml = stalled.length
-    ? stalled.map(t => `<div>⚠️ ${{t.name}} — 已${{t.total_days}}天</div>`).join('')
+    ? stalled.map(t => `<div>⚠️ ${{esc(t.name)}} — 已${{t.total_days}}天</div>`).join('')
     : '<div>暂无停滞任务 👍</div>';
 
   // 4. 优先级倒挂
@@ -563,7 +608,7 @@ function renderReview() {{
   let invertHtml = '';
   if (highUndone.length && lowDone.length) {{
     invertHtml = highUndone.map(t =>
-      `<div>🔴 ${{t.name}} (高优未完成) ←→ ${{lowDone.find(d=>true)?.name || ''}} (低优已完成)</div>`
+      `<div>🔴 ${{esc(t.name)}} (高优未完成) ←→ ${{esc(lowDone.find(d=>true)?.name || '')}} (低优已完成)</div>`
     ).join('');
   }} else {{
     invertHtml = '<div>暂无倒挂 ✅</div>';
@@ -636,6 +681,53 @@ function updateStats() {{
   setTxt('cnt-unfinished', unfinished);
 }}
 
+// ------- 页面内提示条 / 确认框 (原生 alert/confirm 在部分内嵌预览里会被屏蔽) -------
+let toastTimer = null;
+function toast(msg, type) {{
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'on' + (type ? ' ' + type : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {{ el.className = ''; }}, 2800);
+}}
+
+let confirmCb = null;
+function confirmBox(msg, onOk, okText) {{
+  confirmCb = onOk;
+  document.getElementById('cfm-msg').innerHTML = msg;
+  document.getElementById('cfm-ok').textContent = okText || '确定';
+  document.getElementById('cfm-bg').classList.remove('hide');
+}}
+
+function closeConfirm() {{
+  document.getElementById('cfm-bg').classList.add('hide');
+  confirmCb = null;
+}}
+
+// 确认框按钮在 DOM 就绪后绑定(脚本位于弹窗 DOM 之前)
+document.addEventListener('DOMContentLoaded', () => {{
+  const ok = document.getElementById('cfm-ok');
+  if (ok) ok.onclick = () => {{ const fn = confirmCb; closeConfirm(); if (fn) fn(); }};
+}});
+
+// ------- 置顶(当前重点) -------
+function togglePin(no) {{
+  const t = TASKS.find(x => String(x.no) === String(no));
+  if (!t) {{ toast('任务不存在', 'err'); return; }}
+  const next = !t.pinned;
+  fetch('/api/pin_task', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{no: String(no), pinned: next}})
+  }}).then(r => r.json()).then(d => {{
+    if (!d.ok) {{ toast(d.error || '操作失败', 'err'); return; }}
+    t.pinned = next;        // 本地同步后重绘, 不必整页刷新
+    render();
+    toast(next ? '已置顶：No.' + no + ' ' + t.name : '已取消置顶：No.' + no, next ? 'ok' : '');
+  }}).catch(() => toast('连接服务器失败，请确认已启动 serve_task_flow.py', 'err'));
+}}
+
 function loadDataAndRender() {{
   fetch('/api/tasks').then(r => r.json()).then(data => {{
     TASKS = data;
@@ -665,11 +757,13 @@ function loadDataAndRender() {{
 }}
 loadDataAndRender();
 
-// 添加节点弹窗
-function openAddNode(no, name) {{
+// 添加节点弹窗 (任务名在函数内查, 不再由 onclick 传参 —— 名字里的引号会破坏 onclick 属性)
+function openAddNode(no) {{
+  const t = TASKS.find(x => String(x.no) === String(no));
   document.getElementById('modal-no').value = no;
-  document.getElementById('modal-name').textContent = 'No.' + no + ' ' + name;
-  document.getElementById('modal-date').value = new Date().toISOString().slice(0, 10).replace(/-/g, '/');
+  document.getElementById('modal-name').textContent = 'No.' + no + ' ' + (t ? t.name : '');
+  // <input type="date"> 只接受 YYYY-MM-DD, 写成 2026/09/17 会被浏览器丢弃(输入框空白)
+  document.getElementById('modal-date').value = new Date().toISOString().slice(0, 10);
   document.getElementById('modal-progress').value = '';
   document.getElementById('modal-note').value = '';
   document.getElementById('modal-owner').value = '';
@@ -681,24 +775,27 @@ function closeModal() {{
 function submitNode() {{
   const no = document.getElementById('modal-no').value;
   const phase = document.getElementById('modal-phase').value;
-  const dateVal = document.getElementById('modal-date').value;
+  const dateVal = document.getElementById('modal-date').value.replace(/-/g, '/');   // 数据统一存 YYYY/MM/DD
   const progress = document.getElementById('modal-progress').value;
   const note = document.getElementById('modal-note').value;
   const owner = document.getElementById('modal-owner').value;
-  if (!dateVal || progress === '') {{ alert('请填写日期和进度'); return; }}
+  if (!dateVal || progress === '') {{ toast('请填写日期和进度', 'err'); return; }}
   fetch('/api/add_node', {{
     method: 'POST',
     headers: {{'Content-Type': 'application/json'}},
     body: JSON.stringify({{no, phase, date: dateVal, progress: parseInt(progress), note, owner}})
   }}).then(r => r.json()).then(data => {{
-    if (data.ok) {{ location.reload(); }}
-    else {{ alert('添加失败'); }}
-  }}).catch(() => alert('连接服务器失败，请确认已启动 serve_task_flow.py'));
+    if (data.ok) {{
+      toast('节点已添加', 'ok');
+      setTimeout(() => location.reload(), 600);
+    }} else toast(data.error || '添加失败', 'err');
+  }}).catch(() => toast('连接服务器失败，请确认已启动 serve_task_flow.py', 'err'));
 }}
 // 点击背景关闭弹窗
 document.addEventListener('click', e => {{
   if (e.target.id === 'modal-bg') closeModal();
   if (e.target.id === 'edit-modal-bg') closeEditModal();
+  if (e.target.id === 'cfm-bg') closeConfirm();
 }});
 
 // 编辑节点弹窗
@@ -727,28 +824,38 @@ function submitEdit() {{
   const progress = document.getElementById('edit-progress').value;
   const note = document.getElementById('edit-note').value;
   const owner = document.getElementById('edit-owner').value;
-  if (!dateVal || progress === '') {{ alert('请填写日期和进度'); return; }}
+  if (!dateVal || progress === '') {{ toast('请填写日期和进度', 'err'); return; }}
   fetch('/api/edit_node', {{
     method: 'POST',
     headers: {{'Content-Type': 'application/json'}},
     body: JSON.stringify({{no, index: idx, phase, date: dateVal, progress: parseInt(progress), note, owner}})
   }}).then(r => r.json()).then(data => {{
-    if (data.ok) {{ location.reload(); }}
-    else {{ alert('编辑失败'); }}
-  }}).catch(() => alert('连接服务器失败'));
+    if (data.ok) {{
+      toast('节点已更新', 'ok');
+      setTimeout(() => location.reload(), 600);
+    }} else toast(data.error || '编辑失败', 'err');
+  }}).catch(() => toast('连接服务器失败', 'err'));
 }}
 
-// 删除节点
+// 删除节点 (自绘确认框: 原生 confirm 在内嵌预览里被屏蔽且恒返回 false)
 function deleteNode(no, idx) {{
-  if (!confirm('确认删除该节点？')) return;
-  fetch('/api/delete_node', {{
-    method: 'POST',
-    headers: {{'Content-Type': 'application/json'}},
-    body: JSON.stringify({{no, index: idx}})
-  }}).then(r => r.json()).then(data => {{
-    if (data.ok) {{ location.reload(); }}
-    else {{ alert('删除失败'); }}
-  }}).catch(() => alert('连接服务器失败'));
+  const t = TASKS.find(x => String(x.no) === String(no));
+  const node = (t && t.nodes) ? t.nodes[idx] : null;
+  const desc = node ? ('[' + node.phase + '] ' + node.date + ' · ' + node.progress + '%') : '该节点';
+  const warn = (t && t.nodes && t.nodes.length === 1)
+    ? '<br><span style="color:#d6453d">这是该任务的最后一个节点，删除后整个任务也会一并移除。</span>' : '';
+  confirmBox('确认删除节点 ' + desc + '？' + warn, () => {{
+    fetch('/api/delete_node', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{no, index: idx}})
+    }}).then(r => r.json()).then(data => {{
+      if (data.ok) {{
+        toast('节点已删除', 'ok');
+        setTimeout(() => location.reload(), 600);
+      }} else toast(data.error || '删除失败', 'err');
+    }}).catch(() => toast('连接服务器失败', 'err'));
+  }}, '删除');
 }}
 </script>
 
@@ -806,6 +913,20 @@ function deleteNode(no, idx) {{
     </div>
   </div>
 </div>
+
+<!-- 操作确认弹窗 (替代浏览器原生 confirm, 后者在部分内嵌预览里被屏蔽) -->
+<div id="cfm-bg" class="modal-bg hide">
+  <div class="modal" style="width:370px">
+    <h3 id="cfm-title">确认操作</h3>
+    <div id="cfm-msg" class="cfm-msg"></div>
+    <div class="modal-actions">
+      <button onclick="closeConfirm()">取消</button>
+      <button class="btn-primary" id="cfm-ok" style="background:#d6453d;border-color:#d6453d">确定</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
 </body>
 </html>
 """

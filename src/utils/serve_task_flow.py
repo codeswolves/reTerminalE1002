@@ -266,6 +266,31 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
             write_tasks_raw(tasks)
             self._send_json({"ok": True, "no": task_no})
 
+        elif path == "/api/pin_task":
+            data = self._read_body()
+            task_no = str(data.get("no", "")).strip()
+            if not task_no:
+                self._send_json({"ok": False, "error": "缺少任务编号"})
+                return
+            pinned = bool(data.get("pinned", True))
+
+            tasks = read_tasks_raw()
+            ok = False
+            for item in tasks:
+                if str(item.get("no", "")) == task_no:
+                    if pinned:
+                        item["pinned"] = True
+                    else:
+                        # 取消置顶时移除字段, 保持 JSON 干净
+                        item.pop("pinned", None)
+                    ok = True
+                    break
+            if not ok:
+                self._send_json({"ok": False, "error": f"任务 No.{task_no} 不存在"})
+                return
+            write_tasks_raw(tasks)
+            self._send_json({"ok": True, "no": task_no, "pinned": pinned})
+
         elif path == "/api/delete_task":
             data = self._read_body()
             task_no = str(data.get("no", "")).strip()

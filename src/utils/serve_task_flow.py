@@ -35,7 +35,12 @@ from generate_task_flow import (  # noqa: E402
     set_task_field,
     write_tasks_raw,
 )
-from meta import DEFAULT_CATEGORY, DEFAULT_PRIORITY, is_quadrant  # noqa: E402
+from meta import (  # noqa: E402
+    DEFAULT_CATEGORY,
+    DEFAULT_PRIORITY,
+    DELIVERABLE_META,
+    is_quadrant,
+)
 from week_plan import read_week_plan, write_week_plan, write_week_review  # noqa: E402
 from generate_project import (  # noqa: E402
     build_projects,
@@ -250,6 +255,11 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
             today_prog = max(0, min(100, self._to_int(data.get("today", 0), 0)))
             note = data.get("note", "").strip()
             owner = data.get("owner", "").strip()
+            # 预期成果类型(可空); 非法取值直接拒绝, 不静默丢弃用户的输入
+            deliverable = str(data.get("deliverable") or "").strip()
+            if deliverable and deliverable not in DELIVERABLE_META:
+                self._send_json({"ok": False, "error": f"非法成果类型: {deliverable}"})
+                return
 
             if not task_name:
                 self._send_json({"ok": False, "error": "任务名不能为空"})
@@ -284,6 +294,9 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
                 h = _to_hours(data.get(key))
                 if h is not None:
                     new_task[key] = h
+            # 预期成果: 空 = 事务性任务(无产出), 也是合法状态, 同样不写字段
+            if deliverable:
+                new_task["deliverable"] = deliverable
             tasks.append(new_task)
             write_tasks_raw(tasks)
 
@@ -353,6 +366,17 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
                     target.pop(key, None)
                 else:
                     target[key] = h
+
+            # 预期成果: 传空值 = 清除(事务性任务). 非法取值拒绝, 不静默丢弃
+            if "deliverable" in data:
+                dl = str(data.get("deliverable") or "").strip()
+                if dl and dl not in DELIVERABLE_META:
+                    self._send_json({"ok": False, "error": f"非法成果类型: {dl}"})
+                    return
+                if dl:
+                    target["deliverable"] = dl
+                else:
+                    target.pop("deliverable", None)
 
             nodes = target.setdefault("nodes", [])
             if not nodes:
@@ -534,6 +558,18 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
             blockers = self._clean_blockers(data.get("blockers"))
             ok, err = set_task_field(task_no, "blockers", blockers or None)
             self._send_json({"ok": True, "count": len(blockers)} if ok
+                            else {"ok": False, "error": err})
+
+        elif path == "/api/set_deliverable":
+            # 四象限页卡片上的成果角标直接改这里, 不必绕到编辑弹窗
+            data = self._read_body()
+            task_no = str(data.get("no", "")).strip()
+            dl = str(data.get("deliverable") or "").strip()
+            if dl and dl not in DELIVERABLE_META:
+                self._send_json({"ok": False, "error": f"非法成果类型: {dl}"})
+                return
+            ok, err = set_task_field(task_no, "deliverable", dl or None)
+            self._send_json({"ok": ok, "deliverable": dl} if ok
                             else {"ok": False, "error": err})
 
         elif path == "/api/week_review":

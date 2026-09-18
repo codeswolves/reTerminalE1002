@@ -49,6 +49,8 @@ from meta import (  # noqa: E402
     DAY_BUFFER_H,
     DAY_HOURS,
     DAY_PLAN_H,
+    DELIVERABLE_META,
+    DELIVERABLE_ORDER,
     PLAN_DAYS_PER_WEEK,
     PRIORITY_META,
     PRIORITY_ORDER,
@@ -296,6 +298,13 @@ TEMPLATE = r"""<!DOCTYPE html>
     font-size: 11px; line-height: 1; padding: 3px 6px; cursor: pointer;
   }
   .done-btn:hover { border-color: #2e9e5b; background: #e7f4ec; }
+  /* 预期成果角标 */
+  .dlib {
+    border: 1px solid; border-radius: 6px; padding: 2px 6px; font-size: 10px;
+    background: #fff; cursor: pointer; white-space: nowrap;
+  }
+  .dlib:hover { background: #f7f9fc; }
+  .dlib.none { color: #a8b0bd !important; border-color: #dfe4ec !important; border-style: dashed; }
 
   /* ---- 仪表盘 ---- */
   .dash { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
@@ -512,6 +521,21 @@ TEMPLATE = r"""<!DOCTYPE html>
   </div>
 </div>
 
+<!-- 预期成果 -->
+<div class="modal-bg hide" id="m-dl">
+  <div class="modal" style="width:420px">
+    <h3>预期成果</h3>
+    <div class="sub" id="dl-sub"></div>
+    <label>这个任务要产出什么？（决定"产出成果"统计）</label>
+    <select id="dl-sel"></select>
+    <div class="mini" id="dl-hint" style="margin-top:8px;line-height:1.7"></div>
+    <div class="modal-actions">
+      <button onclick="closeModal('m-dl')">取消</button>
+      <button class="btn-primary" onclick="saveDeliverable()">保存</button>
+    </div>
+  </div>
+</div>
+
 <!-- 本周自评 -->
 <div class="modal-bg hide" id="m-wrev">
   <div class="modal" style="width:520px">
@@ -624,6 +648,8 @@ const PRIO_ORDER = __PRIO_ORDER__;
 const BLOCKER = __BLOCKER_META__;
 const CAT = __CAT_META__;
 const CAT_ORDER = __CAT_ORDER__;
+const DL = __DELIVERABLE_META__;
+const DL_ORDER = __DELIVERABLE_ORDER__;
 const BUDGET = __BUDGET__;
 const WEEK_META = __WEEK_META__;
 const WEEK_PLAN = __WEEK_PLAN__;
@@ -784,12 +810,9 @@ function renderDiag() {
 }
 
 /* ---------------- 仪表盘 ---------------- */
-/* 产出成果的口径: 已完成的、属于产出型分类的任务。
-   数据里没有独立字段, 所以它是**推导值** —— 卡片上必须标明口径,
-   否则一个看起来精确的数字会被当成事实 */
-/* 这三个是 meta.CATEGORY_ORDER 的子集 —— 若那边改了分类名, 这里要同步。
-   filter 只是兜底: 改漏时宁可少算, 也不要凭空算出一个不存在的分类。 */
-const DELIVERABLE_CATS = ['科研', '专利', '标准'].filter(c => CAT[c]);
+/* 产出成果现在读任务是 deliverable 字段(预期成果), 不再用 category 推导。
+   旧口径的实测问题: 7 项"成果"里 4 项是"开会/搭工具/看完指南/联系某人",
+   同时"工程"分类的真实交付物(项目、仿真、小程序)被整类排除。 */
 
 function ymdMs(s) {
   const d = parseYmd(s || '');
@@ -853,13 +876,27 @@ function renderDash() {
   const card2 = dashCard('本周完成', cur, '个',
     '上周 ' + prev + ' 个 <b style="color:' + arrowCol + '">' + arrow + '</b>');
 
-  // 3. 产出成果(推导值, 口径写在卡片上)
-  const deliv = done.filter(t => DELIVERABLE_CATS.indexOf(t.category) >= 0);
-  const byCat = {};
-  deliv.forEach(t => byCat[t.category] = (byCat[t.category] || 0) + 1);
-  const catTxt = DELIVERABLE_CATS.filter(c => byCat[c]).map(c => c + ' ' + byCat[c]).join(' · ');
-  const card3 = dashCard('产出成果', deliv.length, '项',
-    (catTxt || '—') + '<br>口径：已完成且分类为 ' + DELIVERABLE_CATS.join(' / '));
+  // 3. 产出成果: 读 deliverable 字段(预期成果), **不再用 category 推导**。
+  //    旧口径把"科研/标准"分类的完成数当成果, 结果把"看完指南""联系某人"也算成成果,
+  //    同时把工程类的真实产出(项目/仿真/小程序)全排除 —— 方向相反的两处误差都不可见。
+  const marked = done.filter(t => t.deliverable);
+  const unmarked = done.length - marked.length;
+  const byDl = {};
+  marked.forEach(t => byDl[t.deliverable] = (byDl[t.deliverable] || 0) + 1);
+  const dlTxt = DL_ORDER.filter(d => byDl[d])
+    .map(d => d + ' ' + byDl[d]).join(' · ');
+  let card3;
+  if (!marked.length) {
+    // 老任务还没有这个字段 —— 宁可显示 —, 也不要拿旧口径编一个数出来
+    card3 = dashCard('产出成果', '—', '',
+      '尚无任务标记预期成果<br>' +
+      (unmarked ? '<b style="color:#b7791f">' + unmarked + '</b> 个已完成任务未标记' : ''));
+  } else {
+    card3 = dashCard('产出成果', marked.length, '项',
+      (dlTxt || '—') +
+      (unmarked ? '<br><span style="color:#b7791f">另有 ' + unmarked + ' 个已完成任务未标记成果</span>' : '') +
+      '<br>口径：已完成且填写了预期成果（与分类无关）');
+  }
 
   // 4. 估时偏差系数: 就是设计文档 §2.8 要的那个数
   const pairs = state.tasks.filter(t => num(t.estimate_h) && num(t.actual_h));
@@ -961,6 +998,11 @@ function cardHtml(t) {
   // 否则要跳到任务清单页去点, 再等这边轮询同步
   const doneBtn = t.finished ? '' :
     `<button class="done-btn" title="标记完成（立即计入仪表盘）" onclick="event.stopPropagation();doneTask('${esc(t.no)}')">✅</button>`;
+  // 预期成果角标: 点它就地改 —— 它决定"产出成果"统计, 不该藏在编辑弹窗里
+  const dlm = t.deliverable ? DL[t.deliverable] : null;
+  const dlBadge = dlm
+    ? `<span class="dlib" style="color:${dlm.color};border-color:${dlm.color}" title="预期成果：${esc(t.deliverable)}（点击修改）" onclick="event.stopPropagation();openDeliverable('${esc(t.no)}')">${esc(t.deliverable)}</span>`
+    : `<span class="dlib none" title="未标记预期成果（点击设置）" onclick="event.stopPropagation();openDeliverable('${esc(t.no)}')">成果?</span>`;
   return `
     <div class="card${t.finished ? ' done' : ''}" draggable="true" data-no="${esc(t.no)}" onclick="openHours('${esc(t.no)}')">
       <div class="card-head">
@@ -973,6 +1015,7 @@ function cardHtml(t) {
       <div class="card-foot">
         <span class="chips">
           <span class="est${est ? '' : ' none'}">${est ? '⏱ ' + fmt(est) + 'h' : '未估算'}</span>
+          ${dlBadge}
           ${hint ? `<span class="hint" title="点击采纳（按优先级与紧迫性推导，仅供参考）" onclick="event.stopPropagation();setQuadrant('${esc(t.no)}','${hint}')">建议 ${hint}</span>` : ''}
         </span>
         <span class="chips">
@@ -1533,6 +1576,42 @@ function loadWeekPlan(week) {
   });
 }
 
+/* ---------------- 预期成果 ---------------- */
+/* 成果类型与任务分类(category)正交: 领域是"科研"不代表产出是"论文",
+   反过来"工程"任务也可能产出论文。所以单独一个字段, 单独填。 */
+let dlEditing = null;
+
+function openDeliverable(no) {
+  const t = byNo(no);
+  if (!t) return;
+  dlEditing = String(no);
+  const sel = document.getElementById('dl-sel');
+  if (!sel.options.length) {
+    sel.innerHTML = '<option value="">无（事务性任务）</option>' +
+      DL_ORDER.map(d => `<option value="${esc(d)}">${esc(d)} —— ${esc((DL[d] || {}).hint || '')}</option>`).join('');
+  }
+  sel.value = t.deliverable || '';
+  document.getElementById('dl-sub').textContent = 'No.' + no + ' ' + t.name;
+  document.getElementById('dl-hint').innerHTML =
+    '留空表示这是事务性任务、没有可交付物 —— 大部分任务确实如此，不必硬凑。<br>' +
+    '这个字段也是<b>天然的完成标准</b>：成果达成了就该收尾，避免任务无限打磨（帕金森定律）。';
+  openModal('m-dl');
+}
+
+function saveDeliverable() {
+  const no = dlEditing;
+  const t = byNo(no);
+  if (!t) return;
+  const val = document.getElementById('dl-sel').value;
+  post('/api/set_deliverable', { no: String(no), deliverable: val }).then(d => {
+    if (!d.ok) { toast(d.error || '保存失败', 'err'); return; }
+    t.deliverable = val;
+    closeModal('m-dl');
+    render();
+    toast(val ? 'No.' + no + ' 预期成果：' + val : 'No.' + no + ' 已标记为无成果任务', 'ok');
+  }).catch(e => toast(e && e.message ? e.message : '连接服务器失败', 'err'));
+}
+
 /* ---------------- 本周自评 ---------------- */
 /* 与排期同存 week_plan.json, 但走独立端点: 写自评不碰 slots, 写排期不碰自评 */
 function renderWeekReview() {
@@ -1912,6 +1991,8 @@ def build_html(tasks):
             .replace("__BLOCKER_META__", js(BLOCKER_META))
             .replace("__CAT_META__", js(cat_meta))
             .replace("__CAT_ORDER__", js(CATEGORY_ORDER))
+            .replace("__DELIVERABLE_META__", js(DELIVERABLE_META))
+            .replace("__DELIVERABLE_ORDER__", js(DELIVERABLE_ORDER))
             .replace("__BUDGET__", js(budget))
             .replace("__WEEK_META__", js(week_meta))
             .replace("__WEEK_PLAN__", js(plan))

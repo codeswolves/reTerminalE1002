@@ -44,6 +44,7 @@ from meta import (  # noqa: E402
     CATEGORY_ICON,
     CATEGORY_ORDER,
     DEFAULT_PRIORITY,
+    DELIVERABLE_META,
     PRIORITY_META,
     PRIORITY_ORDER,
     QUADRANT_META,
@@ -211,6 +212,12 @@ def read_tasks():
             if gap is not None and (max_gap is None or gap > max_gap):
                 max_gap, max_gap_from, max_gap_to = gap, nodes[i - 1]["date"], n["date"]
 
+        # 预期成果类型: 只接受枚举内的值, 非法取值按"未填"处理。
+        # 与 category 正交 —— 领域是"科研"不代表产出是"论文"。
+        deliverable = str(item.get("deliverable") or "").strip()
+        if deliverable not in DELIVERABLE_META:
+            deliverable = ""
+
         # ---- 时间管理四象限相关字段(全部可选, 缺失即保持缺失) ----
         quadrant = str(item.get("quadrant") or "").strip().upper()
         if quadrant not in QUADRANT_META:
@@ -258,6 +265,8 @@ def read_tasks():
             "actual_h": actual_h,
             "blockers": blockers,
             "q_hint": suggest_quadrant(priority, delayed, days_left),
+            # 预期成果类型; 空 = 事务性任务(无产出), 是合法状态而非缺数据
+            "deliverable": deliverable,
             "max_gap": max_gap,
             "max_gap_from": max_gap_from,
             "max_gap_to": max_gap_to,

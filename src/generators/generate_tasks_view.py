@@ -39,6 +39,8 @@ from meta import (  # noqa: E402
     CATEGORY_ORDER,
     DEFAULT_CATEGORY,
     DEFAULT_PRIORITY,
+    DELIVERABLE_META,
+    DELIVERABLE_ORDER,
     PRIORITY_META,
     PRIORITY_ORDER,
     QUADRANT_META,
@@ -72,6 +74,13 @@ def build_html(tasks):
         '      <option value="%s">%s · %s（%s）</option>\n'
         % (q, q, QUADRANT_META[q]["label"], QUADRANT_META[q]["action"])
         for q in QUADRANT_ORDER
+    )
+    # 预期成果: 默认"无(事务性任务)" —— 大部分任务本来就没有可交付物,
+    # 必须给这个出口, 否则会逼人为每个任务硬凑一个成果
+    deliverable_options = '      <option value="">无（事务性任务）</option>\n' + "".join(
+        '      <option value="%s">%s —— %s</option>\n'
+        % (d, d, DELIVERABLE_META[d]["hint"])
+        for d in DELIVERABLE_ORDER
     )
 
     # 分类分组的展示信息: 顺序取实际出现过的分类(未预设的自动追加末尾)
@@ -542,6 +551,7 @@ function openAddTask() {{
   document.getElementById('task-name').value = '';
   document.getElementById('task-priority').value = 'medium';
   document.getElementById('task-quadrant').value = '';
+  document.getElementById('task-deliverable').value = '';
   document.getElementById('task-category').value = '个人';
   document.getElementById('task-progress').value = '0';
   document.getElementById('task-start').value = '';
@@ -565,6 +575,7 @@ function openEditTask(no) {{
   document.getElementById('task-priority').value = t.priority || 'medium';
   // 必须回填象限: 漏了会导致"打开编辑再保存"把已归类的任务清成未归类
   document.getElementById('task-quadrant').value = t.quadrant || '';
+  document.getElementById('task-deliverable').value = t.deliverable || '';
   document.getElementById('task-category').value = t.category || '个人';
   document.getElementById('task-progress').value = t.today || 0;
   // 数据存 YYYY/MM/DD, 而 <input type="date"> 只认 YYYY-MM-DD
@@ -598,10 +609,11 @@ function submitTask() {{
   if (start && due && due < start) {{ toast('计划截止不能早于计划开始', 'err'); return; }}
   const isEdit = editingTaskNo !== null;
   const quadrant = document.getElementById('task-quadrant').value;
+  const deliverable = document.getElementById('task-deliverable').value;
   const estimate_h = parseFloat(document.getElementById('task-estimate').value) || 0;
   const actual_h = parseFloat(document.getElementById('task-actual').value) || 0;
   if (estimate_h < 0 || actual_h < 0) {{ toast('工时不能为负数', 'err'); return; }}
-  const payload = {{name, priority, category, quadrant, today, note, owner, start, due,
+  const payload = {{name, priority, category, quadrant, deliverable, today, note, owner, start, due,
                     estimate_h, actual_h}};
   if (isEdit) payload.no = editingTaskNo;
   fetch(isEdit ? '/api/edit_task' : '/api/add_task', {{
@@ -681,6 +693,9 @@ if (document.readyState === 'loading') {{
     <label>四象限（时间管理）</label>
     <select id="task-quadrant">
 {quad_options}    </select>
+    <label>预期成果</label>
+    <select id="task-deliverable">
+{deliverable_options}    </select>
     <label>分类</label>
     <select id="task-category">
 {cat_options}    </select>

@@ -55,13 +55,13 @@ def step_generate(date=None, style=None):
 
 
 def step_generate_tasks():
-    """步骤2: 生成任务页面（tasks_view + task_flow）"""
+    """步骤2: 生成任务页面（tasks_view + task_flow + quadrant + project）"""
     print()
     print("=" * 50)
     print("[STEP 2/4] 生成任务页面")
     print("=" * 50)
     ok = True
-    for script in ["generate_tasks_view.py", "generate_task_flow.py", "generate_project.py"]:
+    for script in ["generate_tasks_view.py", "generate_task_flow.py", "generate_quadrant.py", "generate_project.py"]:
         cmd = [sys.executable, str(SRC_DIR.parent / "generators" / script)]
         result = subprocess.run(cmd, cwd=str(BASE_DIR))
         if result.returncode != 0:

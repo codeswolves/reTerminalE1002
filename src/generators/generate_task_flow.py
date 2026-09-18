@@ -46,6 +46,7 @@ from meta import (  # noqa: E402
     DEFAULT_PRIORITY,
     PRIORITY_META,
     PRIORITY_ORDER,
+    QUADRANT_META,
     STATUS_META,
     STATUS_ORDER,
     collect_categories,
@@ -66,6 +67,49 @@ def parse_date(s):
     except ValueError:
         # 如 2026/09/31 —— 不存在的日期, 当作未设置, 避免拖垮整个接口
         return None
+
+
+def _to_hours(value):
+    """宽松解析小时数: 非法或 <= 0 一律视为未填写, 返回 None(不按 0 计入统计, 见 §7.3)。"""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        hours = float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return round(hours, 2) if hours > 0 else None
+
+
+def suggest_quadrant(priority, delayed, days_left):
+    """按 §2.4 推导建议象限 —— 仅作页面角标提示, 永不自动落盘。
+
+    两条刻意的限制:
+    1. **不产出 D 建议**。D 意味着"这件事不该进清单", 而它已经在清单里了 ——
+       这是个需要人判断的矛盾状态, 算法不该替人决定(§2.9.4)。
+    2. **low 且不紧迫时不给建议**。"优先级排在后面"不等于"不重要不紧迫",
+       只凭 priority 区分不了这两者(§2.2 已说明 priority 是单维的)。
+    """
+    urgent = bool(delayed) or (days_left is not None and days_left <= 7)
+    pri = str(priority or "").strip().lower()
+    if pri == "high":
+        return "A" if urgent else "B"
+    if pri == "medium":
+        return "C" if urgent else "B"
+    return "C" if urgent else ""
+
+
+def set_task_field(task_no, key, value):
+    """写入/删除任务的顶层字段(value 为 None 时删除字段)。返回 (ok, error)。"""
+    tasks = read_tasks_raw()
+    for item in tasks:
+        if str(item.get("no", "")) == str(task_no).strip():
+            if value is None:
+                item.pop(key, None)
+            else:
+                item[key] = value
+            write_tasks_raw(tasks)
+            return True, ""
+    return False, f"任务 No.{task_no} 不存在"
 
 
 def read_tasks_raw():
@@ -157,6 +201,35 @@ def read_tasks():
                 node["owner"] = n["owner"]
             nodes.append(node)
 
+        days_left = (due_d - date.today()).days if (due_d and not finished) else None
+        delayed = bool(due_d and not finished and due_d < date.today())
+
+        # 最长空档: 相邻节点的最大间隔, 后评估页据此定位停滞区间 —— 见 §2.9.2
+        max_gap, max_gap_from, max_gap_to = None, "", ""
+        for i, n in enumerate(nodes):
+            gap = n.get("days_from_prev")
+            if gap is not None and (max_gap is None or gap > max_gap):
+                max_gap, max_gap_from, max_gap_to = gap, nodes[i - 1]["date"], n["date"]
+
+        # ---- 时间管理四象限相关字段(全部可选, 缺失即保持缺失) ----
+        quadrant = str(item.get("quadrant") or "").strip().upper()
+        if quadrant not in QUADRANT_META:
+            quadrant = ""   # 非法取值按"未标记"处理, 只影响这一个字段
+        estimate_h = _to_hours(item.get("estimate_h"))
+        actual_h = _to_hours(item.get("actual_h"))
+
+        blockers = []
+        if isinstance(item.get("blockers"), list):
+            for b in item["blockers"]:
+                if not isinstance(b, dict) or not str(b.get("type") or "").strip():
+                    continue
+                blockers.append({
+                    "type": str(b.get("type")).strip(),
+                    "from": str(b.get("from") or "").strip(),
+                    "to": str(b.get("to") or "").strip(),
+                    "note": str(b.get("note") or "").strip(),
+                })
+
         tasks.append({
             "no": task_no,
             "name": name,
@@ -177,8 +250,17 @@ def read_tasks():
             "start": plan_start,
             "due": plan_due,
             "plan_days": (due_d - start_d).days if (due_d and start_d) else None,
-            "days_left": (due_d - date.today()).days if (due_d and not finished) else None,
-            "delayed": bool(due_d and not finished and due_d < date.today()),
+            "days_left": days_left,
+            "delayed": delayed,
+            # ---- 四象限 / 估时 / 卡点 (docs/design/time-quadrant-design.md) ----
+            "quadrant": quadrant,
+            "estimate_h": estimate_h,
+            "actual_h": actual_h,
+            "blockers": blockers,
+            "q_hint": suggest_quadrant(priority, delayed, days_left),
+            "max_gap": max_gap,
+            "max_gap_from": max_gap_from,
+            "max_gap_to": max_gap_to,
             "json_backed": True,
         })
     return tasks

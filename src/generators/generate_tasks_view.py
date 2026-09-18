@@ -41,6 +41,8 @@ from meta import (  # noqa: E402
     DEFAULT_PRIORITY,
     PRIORITY_META,
     PRIORITY_ORDER,
+    QUADRANT_META,
+    QUADRANT_ORDER,
     collect_categories,
     js,
 )
@@ -64,6 +66,12 @@ def build_html(tasks):
         '      <option value="%s"%s>%s</option>\n'
         % (k, " selected" if k == DEFAULT_PRIORITY else "", v["label"])
         for k, v in PRIORITY_META.items()
+    )
+    # 四象限(可选的第二维度): 默认"未归类" —— 不自动判定, 由人来定
+    quad_options = '      <option value="">未归类</option>\n' + "".join(
+        '      <option value="%s">%s · %s（%s）</option>\n'
+        % (q, q, QUADRANT_META[q]["label"], QUADRANT_META[q]["action"])
+        for q in QUADRANT_ORDER
     )
 
     # 分类分组的展示信息: 顺序取实际出现过的分类(未预设的自动追加末尾)
@@ -145,6 +153,10 @@ def build_html(tasks):
   .card-name {{ font-size: 15px; font-weight: 600; color: #1f2733; line-height: 1.4; }}
   .badge {{
     flex: none; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 12px;
+  }}
+  /* 四象限角标 (A 重要且紧迫 / B 重要不紧迫 / C 紧迫不重要 / D 不重要不紧迫) */
+  .qtag {{
+    flex: none; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 12px;
   }}
 
   .progress-row {{ display: flex; align-items: center; gap: 10px; }}
@@ -261,6 +273,7 @@ def build_html(tasks):
         <div class="subtitle" id="subtitle"></div>
       </div>
       <button class="add-task-btn" onclick="openAddTask()">＋ 添加任务</button>
+      <a class="proj-link" href="quadrant.html" title="打开时间四象限页">🧭 四象限</a>
       <a class="proj-link" href="project_index.html" title="打开项目索引页">📁 项目管理</a>
     </div>
     <div class="stats">
@@ -287,6 +300,7 @@ const EMBEDDED_TASKS = {data_json};
 
 const PRIORITY = {js(PRIORITY_META)};
 const PRIO_ORDER = {js({k: i for i, k in enumerate(PRIORITY_ORDER)})};
+const QMETA = {js(QUADRANT_META)};
 // 分类分组顺序(实际出现过的分类) 与展示信息(图标/颜色)
 const CAT_ORDER = {js(cat_order)};
 const CAT_META = {js(cat_meta)};
@@ -377,7 +391,10 @@ function cardHtml(t) {{
           <div class="card-no">No.${{esc(t.no)}} · 创建于 ${{esc(t.date)}}</div>
           <div class="card-name">${{esc(t.name)}}</div>
         </div>
-        <span class="badge" style="color:${{p.color}};background:${{p.bg}}">${{p.label}}</span>
+        <span style="display:flex;gap:4px;flex:none;align-items:flex-start">
+          ${{t.quadrant && QMETA[t.quadrant] ? '<span class="qtag" style="color:' + QMETA[t.quadrant].color + ';background:' + QMETA[t.quadrant].bg + '" title="四象限：' + QMETA[t.quadrant].label + '（' + QMETA[t.quadrant].action + '）">' + t.quadrant + '</span>' : ''}}
+          <span class="badge" style="color:${{p.color}};background:${{p.bg}}">${{p.label}}</span>
+        </span>
       </div>
       <div class="progress-row">
         <div class="bar"><div class="bar-fill" style="width:${{t.today}}%;background:${{p.color}}"></div></div>
@@ -524,6 +541,7 @@ function openAddTask() {{
   document.getElementById('task-submit-btn').textContent = '确认添加';
   document.getElementById('task-name').value = '';
   document.getElementById('task-priority').value = 'medium';
+  document.getElementById('task-quadrant').value = '';
   document.getElementById('task-category').value = '个人';
   document.getElementById('task-progress').value = '0';
   document.getElementById('task-start').value = '';
@@ -573,7 +591,8 @@ function submitTask() {{
   if (today < 0 || today > 100) {{ toast('进度请填 0-100 之间的数字', 'err'); return; }}
   if (start && due && due < start) {{ toast('计划截止不能早于计划开始', 'err'); return; }}
   const isEdit = editingTaskNo !== null;
-  const payload = {{name, priority, category, today, note, owner, start, due}};
+  const quadrant = document.getElementById('task-quadrant').value;
+  const payload = {{name, priority, category, quadrant, today, note, owner, start, due}};
   if (isEdit) payload.no = editingTaskNo;
   fetch(isEdit ? '/api/edit_task' : '/api/add_task', {{
     method: 'POST',
@@ -649,6 +668,9 @@ if (document.readyState === 'loading') {{
     <label>优先级</label>
     <select id="task-priority">
 {pri_options}    </select>
+    <label>四象限（时间管理）</label>
+    <select id="task-quadrant">
+{quad_options}    </select>
     <label>分类</label>
     <select id="task-category">
 {cat_options}    </select>

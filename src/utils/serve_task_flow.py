@@ -27,8 +27,15 @@ PROJECT_PAGES = ("project_index.html", "project_tree.html")
 GEN_DIR = os.path.join(BASE_DIR, "src", "generators")
 if GEN_DIR not in sys.path:
     sys.path.insert(0, GEN_DIR)
-from generate_task_flow import parse_date, read_tasks, read_tasks_raw, write_tasks_raw  # noqa: E402
-from meta import DEFAULT_CATEGORY, DEFAULT_PRIORITY  # noqa: E402
+from generate_task_flow import (  # noqa: E402
+    parse_date,
+    read_tasks,
+    read_tasks_raw,
+    set_task_field,
+    write_tasks_raw,
+)
+from meta import DEFAULT_CATEGORY, DEFAULT_PRIORITY, is_quadrant  # noqa: E402
+from week_plan import read_week_plan, write_week_plan  # noqa: E402
 from generate_project import (  # noqa: E402
     build_projects,
     add_project as proj_add,
@@ -79,6 +86,43 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
         except (TypeError, ValueError):
             return default
 
+    def _set_hours(self, data, key):
+        """写入工时字段(estimate_h / actual_h)。
+
+        空白或 <= 0 一律视为"取消填写"并删除字段 —— 不能按 0 存进去,
+        否则会把"没估算"伪装成"不需要时间"(设计文档 §7.3)。
+        返回 (ok, error, hours)。
+        """
+        task_no = str(data.get("no", "")).strip()
+        if not task_no:
+            return False, "缺少任务编号", None
+        raw = data.get(key)
+        hours = None
+        if raw is not None and str(raw).strip() != "":
+            try:
+                hours = float(str(raw).strip())
+            except (TypeError, ValueError):
+                return False, f"{key} 不是合法数字", None
+            hours = round(hours, 2) if hours > 0 else None
+        ok, err = set_task_field(task_no, key, hours)
+        return ok, err, hours
+
+    @staticmethod
+    def _clean_blockers(raw):
+        """清洗卡点数组: 丢弃非 dict 或缺类型的项, 字段统一转字符串。"""
+        out = []
+        if isinstance(raw, list):
+            for b in raw:
+                if not isinstance(b, dict) or not str(b.get("type") or "").strip():
+                    continue
+                out.append({
+                    "type": str(b.get("type")).strip(),
+                    "from": str(b.get("from") or "").strip(),
+                    "to": str(b.get("to") or "").strip(),
+                    "note": str(b.get("note") or "").strip(),
+                })
+        return out
+
     def _send_file(self, file_path):
         """发送本地静态文件（用于 output/project 下的页面）。"""
         if not os.path.isfile(file_path):
@@ -105,6 +149,8 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
         path = parsed.path
         if path == "/api/tasks":
             self._send_json(read_tasks())
+        elif path == "/api/week_plan":
+            self._send_json(read_week_plan())
         elif path == "/api/projects":
             self._send_json(build_projects())
         elif path.startswith("/project/"):
@@ -194,6 +240,10 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
             task_name = data.get("name", "").strip()
             priority = data.get("priority", DEFAULT_PRIORITY).strip()
             category = data.get("category", DEFAULT_CATEGORY).strip()
+            quadrant = str(data.get("quadrant") or "").strip().upper()
+            if quadrant and not is_quadrant(quadrant):
+                self._send_json({"ok": False, "error": f"非法象限: {quadrant}"})
+                return
             today_prog = max(0, min(100, self._to_int(data.get("today", 0), 0)))
             note = data.get("note", "").strip()
             owner = data.get("owner", "").strip()
@@ -223,6 +273,9 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
                 "nodes": [{"phase": "创建", "date": today_str,
                            "progress": today_prog, "note": note, "owner": owner}],
             }
+            # 未归类时不写该字段(与"取消归类 = 删除字段"保持一致)
+            if quadrant:
+                new_task["quadrant"] = quadrant
             tasks.append(new_task)
             write_tasks_raw(tasks)
 
@@ -255,6 +308,16 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
                 target["priority"] = str(data.get("priority") or DEFAULT_PRIORITY).strip()
             if "category" in data:
                 target["category"] = str(data.get("category") or DEFAULT_CATEGORY).strip()
+            # 四象限: 传空值 = 取消归类(删除字段), 与置顶的处理方式一致
+            if "quadrant" in data:
+                q = str(data.get("quadrant") or "").strip().upper()
+                if q and not is_quadrant(q):
+                    self._send_json({"ok": False, "error": f"非法象限: {q}"})
+                    return
+                if q:
+                    target["quadrant"] = q
+                else:
+                    target.pop("quadrant", None)
 
             # 计划周期: 传空值 = 清除该字段(未完成任务用它跟踪延期)
             for key, label in (("start", "计划开始"), ("due", "计划截止")):
@@ -415,6 +478,54 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
             data = self._read_body()
             ok, err = pnode_done(data.get("project"), data.get("id"), bool(data.get("done", True)))
             self._send_json({"ok": True} if ok else {"ok": False, "error": err})
+
+        # ---- 时间管理四象限 (docs/design/time-quadrant-design.md §5) ----
+        elif path == "/api/set_quadrant":
+            data = self._read_body()
+            task_no = str(data.get("no", "")).strip()
+            if not task_no:
+                self._send_json({"ok": False, "error": "缺少任务编号"})
+                return
+            raw = str(data.get("quadrant") or "").strip().upper()
+            # 空值 = 取消归类(删除字段); 非法取值必须报错, 不能悄悄写坏数据
+            if raw and not is_quadrant(raw):
+                self._send_json({"ok": False, "error": f"非法象限: {raw}"})
+                return
+            ok, err = set_task_field(task_no, "quadrant", raw or None)
+            self._send_json({"ok": True, "no": task_no, "quadrant": raw} if ok
+                            else {"ok": False, "error": err})
+
+        elif path == "/api/set_estimate":
+            data = self._read_body()
+            ok, err, hours = self._set_hours(data, "estimate_h")
+            self._send_json({"ok": True, "estimate_h": hours} if ok
+                            else {"ok": False, "error": err})
+
+        elif path == "/api/set_actual":
+            data = self._read_body()
+            ok, err, hours = self._set_hours(data, "actual_h")
+            self._send_json({"ok": True, "actual_h": hours} if ok
+                            else {"ok": False, "error": err})
+
+        elif path == "/api/set_blockers":
+            data = self._read_body()
+            task_no = str(data.get("no", "")).strip()
+            if not task_no:
+                self._send_json({"ok": False, "error": "缺少任务编号"})
+                return
+            blockers = self._clean_blockers(data.get("blockers"))
+            ok, err = set_task_field(task_no, "blockers", blockers or None)
+            self._send_json({"ok": True, "count": len(blockers)} if ok
+                            else {"ok": False, "error": err})
+
+        elif path == "/api/week_plan":
+            data = self._read_body()
+            plan = write_week_plan({
+                "week_start": data.get("week_start"),
+                "slots": data.get("slots"),
+            })
+            self._send_json({"ok": True, "count": len(plan["slots"]),
+                             "week_start": plan["week_start"]})
 
         else:
             self.send_error(404)

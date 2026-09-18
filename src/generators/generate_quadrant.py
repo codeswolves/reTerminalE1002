@@ -545,7 +545,7 @@ function diagnose(q, pct) {
   if (q === 'A' && pct > m.max) return '救火占比过高 —— 检查 A 类里有多少其实是"拖成的 A"';
   if (q === 'B' && pct < m.min) return '最危险的信号 —— 长期价值投入不足，优先从 C 类回收时间';
   if (q === 'C' && pct > m.max) return '被别人的紧急事项牵着走 —— 能委托就委托，能拒就拒';
-  if (q === 'D' && pct > 0) return '纯浪费 —— 建议直接从任务清单删除';
+  if (q === 'D' && pct > 0) return '确认一下这些是否真的还要做';
   return '';
 }
 
@@ -559,7 +559,7 @@ function summarize(st) {
   if (b !== null && b < 65) bad.push('B 类只有 ' + r1(b) + '%，长期价值的投入被挤占');
   if (a !== null && a > 25) bad.push('A 类 ' + r1(a) + '%，救火占比偏高 —— 检查有多少是"拖成的 A"');
   if (c !== null && c > 15) bad.push('C 类 ' + r1(c) + '%，被别人的紧急事项牵着走');
-  if (d !== null && d > 0) bad.push('D 类还占 ' + r1(d) + '%，建议直接删掉');
+  if (d !== null && d > 0) bad.push('D 类还占 ' + r1(d) + '%，确认一下是否真的还要做');
   if (bad.length) return { warn: true, text: '⚠ ' + bad.join('；') + '。' };
   return {
     warn: false,
@@ -678,7 +678,7 @@ function renderMatrix() {
     const h = list.reduce((s, t) => s + (num(t.estimate_h) || 0), 0);
     const body = list.length
       ? list.map(cardHtml).join('')
-      : `<div class="quad-empty">${q === 'D' ? '这里应该什么都没有 👍' : '暂无任务'}</div>`;
+      : `<div class="quad-empty">${q === 'D' ? 'D 类暂时没有任务' : '暂无任务'}</div>`;
     return `
       <div class="quad" data-q="${q}">
         <div class="quad-head">

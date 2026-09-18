@@ -41,6 +41,11 @@ if GEN_DIR not in sys.path:
 from meta import (  # noqa: E402
     BLOCKER_META,
     BLOCKER_ORDER,
+    CATEGORY_COLOR,
+    CATEGORY_FALLBACK_COLOR,
+    CATEGORY_FALLBACK_ICON,
+    CATEGORY_ICON,
+    CATEGORY_ORDER,
     DAY_BUFFER_H,
     DAY_HOURS,
     DAY_PLAN_H,
@@ -124,14 +129,43 @@ TEMPLATE = r"""<!DOCTYPE html>
   .diag-empty { font-size: 12px; color: #8893a7; line-height: 1.8; }
   .diag-demo { font-size: 11px; color: #8893a7; margin-top: 9px; line-height: 2; background: #fafbfd; border-radius: 8px; padding: 9px 12px; }
   .diag-demo i { font-style: normal; color: #d3dae6; }
+  .diag-legend {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 5px 16px;
+    padding: 9px 0 8px; font-size: 11px; color: #8893a7;
+    border-bottom: 1px solid #f0f3f8;
+  }
+  .diag-legend .lg {
+    display: inline-block; width: 22px; height: 9px; margin-right: 5px;
+    vertical-align: -1px; border-radius: 3px;
+  }
+  .diag-legend .lg-fill { background: #8893a7; border-radius: 5px; }
+  /* 与 .qbar .zone 保持同一视觉语言: 斜纹 + 左右边界线 */
+  .diag-legend .lg-zone {
+    background: repeating-linear-gradient(45deg, rgba(90,101,119,.42) 0 1.5px, transparent 1.5px 4px);
+    border-left: 1.5px solid rgba(90,101,119,.55);
+    border-right: 1.5px solid rgba(90,101,119,.55);
+    border-radius: 0;
+  }
+  .diag-legend .lg-note { color: #a8b0bd; }
+
   .diag-row { display: grid; grid-template-columns: max-content 1fr 236px; gap: 12px; align-items: center; padding: 9px 0; border-top: 1px solid #f0f3f8; }
   .diag-row:first-child { border-top: none; }
   .qtag { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; white-space: nowrap; }
   .qdot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
   .qtag small { font-weight: 400; color: #8893a7; font-size: 11px; white-space: nowrap; }
   .qbar { position: relative; height: 12px; background: #eef1f6; border-radius: 6px; overflow: hidden; }
-  .qbar .zone { position: absolute; top: 0; bottom: 0; background: #dbe6f5; }
-  .qbar .fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 6px; opacity: .82; transition: width .3s ease; }
+  /* 目标区间用斜纹 + 边界线, 而不是实心色块:
+     1) 实心块会被读成"第二段进度条"; 2) 它必须盖在进度条之上 ——
+     实际值落在区间内时(达标), 实心块会被进度条完全遮住, 恰好最该看到目标的时候看不到。
+     颜色固定为中性灰蓝, 不随象限变色 —— "目标"这个概念与象限无关, 各象限不同色会让人
+     误以为三条带子含义不同。 */
+  .qbar .zone {
+    position: absolute; top: 0; bottom: 0; z-index: 2;
+    background: repeating-linear-gradient(45deg, rgba(90,101,119,.42) 0 1.5px, transparent 1.5px 4px);
+    border-left: 1.5px solid rgba(90,101,119,.55);
+    border-right: 1.5px solid rgba(90,101,119,.55);
+  }
+  .qbar .fill { position: absolute; top: 0; bottom: 0; left: 0; z-index: 1; border-radius: 6px; opacity: .82; transition: width .3s ease; }
   .qval { font-size: 12px; color: #5a6577; line-height: 1.5; }
   .qval b { font-size: 14px; color: #1f2733; margin-right: 6px; white-space: nowrap; }
   .qval b.over { color: #d6453d; }
@@ -242,6 +276,58 @@ TEMPLATE = r"""<!DOCTYPE html>
   .wk-slot.done { opacity: .6; }
   .wk-foot { font-size: 12px; color: #5a6577; line-height: 1.9; margin-top: 11px; padding-top: 9px; border-top: 1px solid #f0f3f8; }
   .wk-foot b { color: #1f2733; }
+  /* 周自评展示区 */
+  .wk-rev { margin-top: 11px; }
+  .wk-rev .rev-box {
+    background: #fbfcfe; border: 1px solid #e3e8ef; border-left: 3px solid #7c6bc4;
+    border-radius: 8px; padding: 10px 13px; font-size: 12px; color: #3c4658;
+    line-height: 1.75; white-space: pre-wrap; word-break: break-word;
+  }
+  .wk-rev .rev-meta { font-size: 11px; color: #a8b0bd; margin-top: 6px; }
+  .wk-rev .rev-meta b { color: #7c6bc4; font-weight: 600; }
+
+  .wk-nav {
+    border: 1px solid #d8dee9; background: #fff; border-radius: 6px; color: #5a6577;
+    width: 24px; height: 22px; font-size: 14px; line-height: 1; padding: 0; cursor: pointer;
+  }
+  .wk-nav:hover { border-color: #3b6fb0; color: #3b6fb0; }
+  .done-btn {
+    border: 1px solid #cfe3d6; background: #f0f9f3; border-radius: 6px;
+    font-size: 11px; line-height: 1; padding: 3px 6px; cursor: pointer;
+  }
+  .done-btn:hover { border-color: #2e9e5b; background: #e7f4ec; }
+
+  /* ---- 仪表盘 ---- */
+  .dash { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .dash-card { border: 1px solid #e3e8ef; border-radius: 10px; padding: 12px 14px; background: #fff; }
+  .dash-card .dc-label { font-size: 12px; color: #8893a7; margin-bottom: 6px; }
+  .dash-card .dc-value { font-size: 24px; font-weight: 700; color: #2b3444; line-height: 1.15; }
+  .dash-card .dc-value small { font-size: 13px; font-weight: 400; color: #8893a7; margin-left: 3px; }
+  .dash-card .dc-value .dc-tag { font-size: 12px; font-weight: 600; margin-left: 5px; }
+  .dash-card .dc-sub { font-size: 11px; color: #8893a7; margin-top: 6px; line-height: 1.5; }
+  .dash-card .dc-sub b { color: #5a6577; font-weight: 600; }
+  .dash-trend { grid-column: 1 / -1; border: 1px solid #e3e8ef; border-radius: 10px; padding: 12px 14px; background: #fff; }
+  .dash-bars { display: flex; align-items: flex-end; gap: 6px; height: 62px; margin-top: 14px; }
+  .dash-bar { flex: 1; background: #cfd9e6; border-radius: 3px 3px 0 0; min-height: 2px; position: relative; }
+  .dash-bar.on { background: #3b6fb0; }
+  .dash-bar .db-n { position: absolute; top: -15px; left: 0; right: 0; text-align: center; font-size: 10px; color: #8893a7; }
+  .dash-x { display: flex; gap: 6px; margin-top: 5px; }
+  /* min-width:0 是必需的: flex 项目默认 min-width:auto, 压不到内容宽度以下,
+     12 个日期标签在窄屏会把容器撑破 */
+  .dash-x div { flex: 1; min-width: 0; text-align: center; font-size: 10px; color: #a8b0bd; }
+  .dash-empty { border: 1px dashed #d8dee9; border-radius: 10px; padding: 16px; text-align: center; color: #8893a7; font-size: 12px; grid-column: 1 / -1; }
+  .dist { margin-top: 10px; }
+  .dist-row {
+    display: grid; grid-template-columns: 100px 1fr 64px 92px 58px;
+    align-items: center; gap: 8px; padding: 3px 0; font-size: 12px;
+  }
+  .dist-row .dir-name { color: #5a6577; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dist-row .dir-bar { height: 14px; background: #f0f2f5; border-radius: 4px; overflow: hidden; }
+  .dist-row .dir-bar i { display: block; height: 100%; border-radius: 4px; }
+  .dist-row .dir-pct { text-align: right; font-weight: 600; color: #2b3444; }
+  .dist-row .dir-plan { text-align: right; color: #8893a7; font-size: 11px; }
+  .dist-row .dir-diff { text-align: right; font-size: 11px; }
+
   .wk-pool-head { display: flex; align-items: center; gap: 8px; margin: 15px 0 8px; }
   .wk-pool { display: flex; flex-wrap: wrap; gap: 8px; }
   .wk-chip {
@@ -252,7 +338,11 @@ TEMPLATE = r"""<!DOCTYPE html>
   .wk-chip.dragging { opacity: .45; }
   .wk-chip .wq { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 6px; flex: none; }
   .wk-chip .wn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .wk-chip .wh { font-size: 10px; color: #8893a7; flex: none; }
+  .wk-chip .wh {
+    font-size: 10px; color: #8893a7; flex: none; cursor: pointer;
+    border-bottom: 1px dashed #c8cfda; padding-bottom: 1px;
+  }
+  .wk-chip .wh:hover { color: #3b6fb0; border-bottom-color: #3b6fb0; }
 
   /* 弹窗 */
   .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
@@ -323,6 +413,18 @@ TEMPLATE = r"""<!DOCTYPE html>
     .facts { grid-template-columns: 1fr; }
     .modal { padding: 17px; }
     .blk-row { flex-direction: column; align-items: stretch; }
+    /* 仪表盘 4 列在 390px 上每格只剩 ~78px, 数字会被挤到换行 —— 降到 2 列 */
+    .dash { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .dash-card { padding: 10px 11px; }
+    .dash-card .dc-value { font-size: 20px; }
+    /* 分类占比: 小屏藏掉"计划"与"pp 差"两列, 只留名称/条/占比 */
+    .dist-row { grid-template-columns: 78px 1fr 50px; }
+    .dist-row .dir-plan, .dist-row .dir-diff { display: none; }
+    /* 卡片底部左右两组按钮在窄屏会互挤, 改成上下排 */
+    .card-foot { flex-direction: column; align-items: stretch; gap: 7px; }
+    /* 趋势图: 12 组柱+标签在窄屏很挤, 缩小间距与字号 */
+    .dash-bars, .dash-x { gap: 4px; }
+    .dash-x div { font-size: 9px; }
   }
 
   /* 触屏没有 hover: 操作按钮不要藏得太深, 拖拽不可靠, 以按钮路径为主 */
@@ -351,12 +453,17 @@ TEMPLATE = r"""<!DOCTYPE html>
     <div class="panel-head">
       <div class="panel-title">每周时间安排<span class="cnt" id="wk-cnt"></span></div>
       <div class="chips">
+        <button class="wk-nav" onclick="shiftWeek(-1)" title="上一周">‹</button>
         <span class="mini" id="wk-range"></span>
+        <button class="wk-nav" onclick="shiftWeek(1)" title="下一周">›</button>
+        <button class="est" id="wk-back" onclick="shiftWeek(0)">回到本周</button>
+        <button class="est" id="wk-rev-btn" onclick="openWeekReview()">📝 自评</button>
         <button class="est" onclick="clearWeek()">清空本周</button>
       </div>
     </div>
     <div class="wk-scroll" id="wkgrid"></div>
     <div class="wk-foot" id="wk-foot"></div>
+    <div class="wk-rev" id="wk-rev"></div>
     <div class="wk-pool-head">
       <span class="mini">待安排</span>
       <span class="mini" id="wk-pool-cnt"></span>
@@ -374,11 +481,24 @@ TEMPLATE = r"""<!DOCTYPE html>
         <b id="b-week">0</b>h/周
       </div>
     </div>
+    <div class="diag-legend">
+      <span><i class="lg lg-fill"></i>实际占比</span>
+      <span><i class="lg lg-zone"></i>目标区间 —— 该象限应有的占比</span>
+      <span class="lg-note">实心条越过带子右边界＝超限，没够到左边界＝不足</span>
+    </div>
     <div id="diag"></div>
     <div class="diag-foot" id="diag-foot"></div>
   </div>
 
   <div class="matrix" id="matrix"></div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">仪表盘<span class="mini" id="dash-stamp"></span></div>
+      <div class="chips"><span class="mini">统计口径见每张卡片下方 · 本页操作即时生效</span></div>
+    </div>
+    <div class="dash" id="dash"></div>
+  </div>
 
   <div class="panel">
     <div class="panel-head">
@@ -389,6 +509,20 @@ TEMPLATE = r"""<!DOCTYPE html>
       </div>
     </div>
     <div class="quad-body" id="unclassified"></div>
+  </div>
+</div>
+
+<!-- 本周自评 -->
+<div class="modal-bg hide" id="m-wrev">
+  <div class="modal" style="width:520px">
+    <h3 id="wrev-title">本周自评</h3>
+    <div class="sub" id="wrev-sub"></div>
+    <label>这一周的情况（用自己的话写，给自己看）</label>
+    <textarea id="wrev-text" rows="9" placeholder="可以写：&#10;· 哪些做成了、哪些没做到&#10;· 没做到的卡在哪（被打断 / 估时偏了 / 本来就不该接）&#10;· 下周要调整什么（配额、块粒度，还是直接砍任务）"></textarea>
+    <div class="modal-actions">
+      <button onclick="closeModal('m-wrev')">取消</button>
+      <button class="btn-primary" onclick="saveWeekReview()">保存自评</button>
+    </div>
   </div>
 </div>
 
@@ -488,6 +622,8 @@ const QUAD_ORDER = __QUAD_ORDER__;
 const PRIO = __PRIORITY_META__;
 const PRIO_ORDER = __PRIO_ORDER__;
 const BLOCKER = __BLOCKER_META__;
+const CAT = __CAT_META__;
+const CAT_ORDER = __CAT_ORDER__;
 const BUDGET = __BUDGET__;
 const WEEK_META = __WEEK_META__;
 const WEEK_PLAN = __WEEK_PLAN__;
@@ -555,16 +691,17 @@ function r1(v) { return Math.round(v * 10) / 10; }
 function summarize(st) {
   const g = q => st.byQ[q].pct;
   const a = g('A'), b = g('B'), c = g('C'), d = g('D');
+  // 阈值一律读 QUAD, 不写字面量 —— 否则改 meta.py 的说法在这里不生效
   const bad = [];
-  if (b !== null && b < 65) bad.push('B 类只有 ' + r1(b) + '%，长期价值的投入被挤占');
-  if (a !== null && a > 25) bad.push('A 类 ' + r1(a) + '%，救火占比偏高 —— 检查有多少是"拖成的 A"');
-  if (c !== null && c > 15) bad.push('C 类 ' + r1(c) + '%，被别人的紧急事项牵着走');
-  if (d !== null && d > 0) bad.push('D 类还占 ' + r1(d) + '%，确认一下是否真的还要做');
+  if (b !== null && b < QUAD.B.min) bad.push('B 类只有 ' + r1(b) + '%，长期价值的投入被挤占');
+  if (a !== null && a > QUAD.A.max) bad.push('A 类 ' + r1(a) + '%，救火占比偏高 —— 检查有多少是"拖成的 A"');
+  if (c !== null && c > QUAD.C.max) bad.push('C 类 ' + r1(c) + '%，被别人的紧急事项牵着走');
+  if (d !== null && d > QUAD.D.max) bad.push('D 类还占 ' + r1(d) + '%，确认一下是否真的还要做');
   if (bad.length) return { warn: true, text: '⚠ ' + bad.join('；') + '。' };
   return {
     warn: false,
     text: '✓ 结构在目标区间内' + (b !== null ? '（B 类 ' + r1(b) + '%）' : '') +
-          (a !== null && a < 20 ? '。A 类偏低，说明最近没有救火任务，或者还没被识别出来' : '')
+          (a !== null && a < QUAD.A.min ? '。A 类偏低，说明最近没有救火任务，或者还没被识别出来' : '')
   };
 }
 
@@ -583,8 +720,9 @@ function renderDiag() {
       'C 紧迫不重要 &nbsp;&nbsp;<i>▓▓▓▓░░░░░░</i>&nbsp; 23% &nbsp; 目标 ≤15% &nbsp;&nbsp;&nbsp; ⚠ 超限 —— 被别人的紧急事项牵着走' +
       '</div>';
     document.getElementById('diag-foot').innerHTML =
-      '分母 = 净可安排时间 ' + fmt(state.dayH - state.bufH) +
-      'h/天（机动 ' + fmt(state.bufH) + 'h 在分母之外）· 口径：任务池工作量结构';
+      '百分比 = 各象限估时 ÷ 已估算总工时（任务池工作量结构）<br>' +
+      '小时数 = 目标百分比 × 净可安排 ' + fmt(state.dayH - state.bufH) +
+      'h/天（机动 ' + fmt(state.bufH) + 'h 在分母之外）';
     return;
   }
 
@@ -597,11 +735,15 @@ function renderDiag() {
     const over = pct !== null && pct > m.max;
     const low = pct !== null && q === 'B' && pct < m.min;
     const cls = over ? 'over' : (low ? 'low' : '');
-    const target = m.max === 0 ? '目标 0%' : '目标 ' + m.min + '–' + m.max + '%';
+    // C 的下界是 0 但语义是"上限 15%"（原话是单值 15%）, 写成 "≤15%" 才准确
+    const target = m.max === 0 ? '目标 0%'
+      : (m.min === 0 ? '目标 ≤' + m.max + '%' : '目标 ' + m.min + '–' + m.max + '%');
     const lo = wh * m.min / 100, hi = wh * m.max / 100;
+    // 这行是"按周预算换算出的执行参考", 和上面的百分比(占任务池)不是同一个分母 ——
+    // 必须带前缀说明, 否则会被读成"同一个占比的另一种写法"
     const hrs = m.max === 0
-      ? '0h'
-      : (m.min === 0
+      ? '目标 0h'
+      : '按 ' + fmt(wh) + 'h/周 ≈ ' + (m.min === 0
         ? '≤' + fmt(hi) + 'h/周 · ≤' + fmt(hi / state.daysW) + 'h/天'
         : fmt(lo) + '–' + fmt(hi) + 'h/周 · ' + fmt(lo / state.daysW) + '–' + fmt(hi / state.daysW) + 'h/天');
     const note = diagnose(q, pct);
@@ -627,11 +769,178 @@ function renderDiag() {
   const sum = summarize(st);
   const foot = [];
   foot.push('<div class="diag-summary' + (sum.warn ? ' warn' : '') + '">' + sum.text + '</div>');
-  foot.push('基于 <b>' + st.estN + ' / ' + st.allN + '</b> 个未完成且已估算的任务 · 口径：任务池工作量结构（不是本周实际投入）');
-  if (st.totalH > 0) foot.push('已估算总工时 ' + fmt(st.totalH) + 'h');
+  // 两个数各有各的分母, 必须分开写清楚 ——
+  // 从前合成一句"分母 = 净可安排时间"会和"任务池工作量结构"直接打架
+  foot.push('基于 <b>' + st.estN + ' / ' + st.allN + '</b> 个未完成且已估算的任务');
+  if (st.totalH > 0) {
+    foot.push('<b>百分比</b> = 本象限估时 ÷ 已估算总工时 ' + fmt(st.totalH) +
+      'h —— 口径是<u>任务池工作量结构</u>，不是本周实际投入');
+  }
   if (st.estN / Math.max(1, st.allN) < 0.7) foot.push('⚠ 未估算的任务超过 30%，上面的比例还不可信');
-  foot.push('分母 = 净可安排时间 ' + fmt(state.dayH - state.bufH) + 'h/天（机动 ' + fmt(state.bufH) + 'h 在分母之外）');
+  foot.push('<b>小时数</b> = 目标百分比 × 净可安排 ' + fmt(wh) + 'h/周（' +
+    fmt(state.dayH) + 'h/天 − 机动 ' + fmt(state.bufH) + 'h = ' +
+    fmt(state.dayH - state.bufH) + 'h/天 × ' + fmt(state.daysW) + ' 天）');
   document.getElementById('diag-foot').innerHTML = foot.join('<br>');
+}
+
+/* ---------------- 仪表盘 ---------------- */
+/* 产出成果的口径: 已完成的、属于产出型分类的任务。
+   数据里没有独立字段, 所以它是**推导值** —— 卡片上必须标明口径,
+   否则一个看起来精确的数字会被当成事实 */
+/* 这三个是 meta.CATEGORY_ORDER 的子集 —— 若那边改了分类名, 这里要同步。
+   filter 只是兜底: 改漏时宁可少算, 也不要凭空算出一个不存在的分类。 */
+const DELIVERABLE_CATS = ['科研', '专利', '标准'].filter(c => CAT[c]);
+
+function ymdMs(s) {
+  const d = parseYmd(s || '');
+  return isNaN(d.getTime()) ? null : d.getTime();
+}
+
+/* 毫秒时间戳 -> 所在周的周一(YYYY/MM/DD) */
+function weekKeyOf(ms) {
+  const d = new Date(ms);
+  return fmtYmd(new Date(d.getTime() - ((d.getDay() + 6) % 7) * 86400000));
+}
+
+function dashCard(label, value, unit, subs) {
+  return '<div class="dash-card"><div class="dc-label">' + label + '</div>' +
+    '<div class="dc-value">' + value + (unit ? '<small>' + unit + '</small>' : '') + '</div>' +
+    (subs ? '<div class="dc-sub">' + subs + '</div>' : '') + '</div>';
+}
+
+function renderDash() {
+  const box = document.getElementById('dash');
+  // 标出数据新鲜度: 一眼看出页面数据是刚拉的, 还是停留很久了(没有自动同步)
+  const stamp = document.getElementById('dash-stamp');
+  if (stamp) stamp.textContent = '· 数据更新于 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  const done = state.tasks.filter(t => t.finished && ymdMs(t.completed_date) !== null);
+  if (!done.length) {
+    box.innerHTML = '<div class="dash-empty">还没有已完成的任务 —— 完成任务后这里会显示平均耗时、每周产出与估时偏差</div>';
+    return;
+  }
+
+  // 1. 平均完成时间: 均值容易被少数长任务拉偏, 所以均值与中位数一起给
+  const days = done.map(t => t.total_days).filter(d => typeof d === 'number' && d >= 0);
+  const sorted = days.slice().sort((a, b) => a - b);
+  const avg = days.length ? days.reduce((a, b) => a + b, 0) / days.length : null;
+  // 偶数个时取中间两项平均, 否则直接取上中位, 与"中位数"这个名字不符
+  const med = !sorted.length ? null
+    : (sorted.length % 2 ? sorted[(sorted.length - 1) / 2]
+      : Math.round((sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2));
+  // "当天完成"的琐事会把均值稀释掉 —— 单独给出，否则这个数字看不出真实分布
+  const zeroN = days.filter(d => d === 0).length;
+  const multi = days.filter(d => d > 0);
+  const multiAvg = multi.length ? multi.reduce((a, b) => a + b, 0) / multi.length : null;
+  const card1 = dashCard('平均完成时间',
+    avg === null ? '—' : fmt(Math.round(avg * 10) / 10), '天',
+    '中位数 <b>' + (med === null ? '—' : med) + '</b> 天 · 当天完成 <b>' + zeroN + '</b> 个<br>' +
+    (multiAvg === null ? ''
+      : '跨天任务平均 <b>' + fmt(Math.round(multiAvg * 10) / 10) + '</b> 天（' + multi.length + ' 个）· ') +
+    '共 ' + days.length + ' 个已完成');
+
+  // 2. 每周完成数: 本周 + 近 12 周趋势
+  const byWeek = {};
+  done.forEach(t => {
+    const k = weekKeyOf(ymdMs(t.completed_date));
+    byWeek[k] = (byWeek[k] || 0) + 1;
+  });
+  const thisW = thisWeekStart();
+  const lastW = fmtYmd(new Date(parseYmd(thisW).getTime() - 7 * 86400000));
+  const cur = byWeek[thisW] || 0, prev = byWeek[lastW] || 0;
+  const diff = cur - prev;
+  const arrow = diff > 0 ? '↑ +' + diff : (diff < 0 ? '↓ ' + diff : '持平');
+  const arrowCol = diff > 0 ? '#2e9e5b' : (diff < 0 ? '#d6453d' : '#8893a7');
+  const card2 = dashCard('本周完成', cur, '个',
+    '上周 ' + prev + ' 个 <b style="color:' + arrowCol + '">' + arrow + '</b>');
+
+  // 3. 产出成果(推导值, 口径写在卡片上)
+  const deliv = done.filter(t => DELIVERABLE_CATS.indexOf(t.category) >= 0);
+  const byCat = {};
+  deliv.forEach(t => byCat[t.category] = (byCat[t.category] || 0) + 1);
+  const catTxt = DELIVERABLE_CATS.filter(c => byCat[c]).map(c => c + ' ' + byCat[c]).join(' · ');
+  const card3 = dashCard('产出成果', deliv.length, '项',
+    (catTxt || '—') + '<br>口径：已完成且分类为 ' + DELIVERABLE_CATS.join(' / '));
+
+  // 4. 估时偏差系数: 就是设计文档 §2.8 要的那个数
+  const pairs = state.tasks.filter(t => num(t.estimate_h) && num(t.actual_h));
+  let card4;
+  if (!pairs.length) {
+    card4 = dashCard('估时偏差', '—', '',
+      '还没有"预估 + 实际"都填的任务<br>完成时补一下实际净投入即可');
+  } else {
+    const k = pairs.reduce((s, t) => s + num(t.actual_h) / num(t.estimate_h), 0) / pairs.length;
+    const kk = Math.round(k * 100) / 100;
+    const kc = k > 1.15 ? '#d6453d' : (k < 0.85 ? '#2e9e5b' : '#5a6577');
+    const ktxt = k > 1.15 ? '习惯性低估' : (k < 0.85 ? '习惯性高估' : '估算较准');
+    card4 = dashCard('估时偏差', '×' + kk, '',
+      '实际 ÷ 预估 · <span class="dc-tag" style="color:' + kc + '">' + ktxt + '</span><br>基于 ' +
+      pairs.length + ' 条配对（未填实际的不计入）');
+  }
+
+  // 趋势: 近 12 周柱状图
+  const base = parseYmd(thisW).getTime();
+  const weeks = [];
+  for (let i = 11; i >= 0; i--) weeks.push(fmtYmd(new Date(base - i * 7 * 86400000)));
+  const counts = weeks.map(w => byWeek[w] || 0);
+  const maxN = Math.max(1, Math.max.apply(null, counts));
+  const bars = weeks.map((w, i) => {
+    const h = Math.max(2, Math.round(counts[i] / maxN * 56));
+    return '<div class="dash-bar' + (w === thisW ? ' on' : '') + '" style="height:' + h + 'px">' +
+      (counts[i] ? '<span class="db-n">' + counts[i] + '</span>' : '') + '</div>';
+  }).join('');
+  const xs = weeks.map(w => '<div>' + w.slice(5, 7) + '/' + w.slice(8, 10) + '</div>').join('');
+  const trend = '<div class="dash-trend"><div class="mini">每周完成任务数（近 12 周 · 蓝色柱为本周）</div>' +
+    '<div class="dash-bars">' + bars + '</div><div class="dash-x">' + xs + '</div></div>';
+
+  // 5. 各类任务的时间投入占比: 实际(actual_h, 仅已完成) 对照 计划(estimate_h, 全部已估算)
+  //    两者口径不同 —— 混在一起会得出错误结论, 所以拆开算、分别标注
+  const actBy = {}, planBy = {};
+  let actAll = 0, planAll = 0;
+  state.tasks.forEach(t => {
+    const c = t.category || '其他';
+    if (num(t.actual_h)) { actBy[c] = (actBy[c] || 0) + num(t.actual_h); actAll += num(t.actual_h); }
+    if (num(t.estimate_h)) { planBy[c] = (planBy[c] || 0) + num(t.estimate_h); planAll += num(t.estimate_h); }
+  });
+  const cats = Object.keys(actBy).concat(Object.keys(planBy))
+    .filter((c, i, arr) => arr.indexOf(c) === i)
+    .sort((a, b) => (actBy[b] || 0) - (actBy[a] || 0));
+  let dist;
+  if (!actAll && !planAll) {
+    dist = '<div class="mini">还没有可统计的工时</div>';
+  } else {
+    dist = '<div class="dist">' + cats.map(c => {
+      const m = CAT[c] || { color: '#8893a7', icon: '' };
+      const a = actBy[c] || 0, p = planBy[c] || 0;
+      const ap = actAll ? a / actAll * 100 : 0;
+      const pp = planAll ? p / planAll * 100 : 0;
+      const d = (actAll && planAll) ? ap - pp : null;
+      // 该分类下没有任何已完成任务时是"无数据", 不是 0% ——
+      // 显示成 0% 会读成"这个类别不重要", 而事实是"还没做", 结论正好相反
+      const hasAct = actBy[c] !== undefined;
+      const hasPlan = planBy[c] !== undefined;
+      const ppTxt = hasPlan ? pp.toFixed(1) + '%' : '—';   // 与"无实际"对称: 不拿 0.0% 冒充数据
+      const dTxt = !hasAct
+        ? '<span style="color:#8893a7">尚无完成</span>'
+        : (d === null ? '' :
+          '<span style="color:' + (d > 1 ? '#d6453d' : (d < -1 ? '#2e9e5b' : '#8893a7')) + '">' +
+          (d > 0 ? '+' : '') + (Math.round(d * 10) / 10) + 'pp</span>');
+      return '<div class="dist-row">' +
+        '<div class="dir-name">' + m.icon + ' ' + c + '</div>' +
+        '<div class="dir-bar"><i style="width:' + (hasAct ? ap.toFixed(1) : 0) +
+        '%;background:' + m.color + (hasAct ? '' : ';opacity:.28') + '"></i></div>' +
+        '<div class="dir-pct">' + (hasAct ? ap.toFixed(1) + '%' : '—') + '</div>' +
+        '<div class="dir-plan">计划 ' + ppTxt + '</div>' +
+        '<div class="dir-diff">' + dTxt + '</div></div>';
+    }).join('') + '</div>' +
+      '<div class="mini" style="margin-top:8px">实际：' + fmt(actAll) + 'h / ' +
+      state.tasks.filter(t => num(t.actual_h)).length + ' 个任务（actual_h）· 计划：' + fmt(planAll) +
+      'h / ' + state.tasks.filter(t => num(t.estimate_h)).length +
+      ' 个任务（estimate_h）· 两者口径不同，故分别标注</div>';
+  }
+  const distCard = '<div class="dash-trend"><div class="mini">各类任务的时间投入占比' +
+    '（按实际净投入降序 · pp = 相对计划的百分点差）</div>' + dist + '</div>';
+
+  box.innerHTML = card1 + card2 + card3 + card4 + distCard + trend;
 }
 
 /* ---------------- 卡片 ---------------- */
@@ -648,6 +957,10 @@ function cardHtml(t) {
   const rv = t.finished
     ? `<span class="review-btn" onclick="openReview('${esc(t.no)}')">后评估</span>`
     : '';
+  // 完成入口放在本页, 是为了让"完成任务 → 仪表盘变化"形成闭环 ——
+  // 否则要跳到任务清单页去点, 再等这边轮询同步
+  const doneBtn = t.finished ? '' :
+    `<button class="done-btn" title="标记完成（立即计入仪表盘）" onclick="event.stopPropagation();doneTask('${esc(t.no)}')">✅</button>`;
   return `
     <div class="card${t.finished ? ' done' : ''}" draggable="true" data-no="${esc(t.no)}" onclick="openHours('${esc(t.no)}')">
       <div class="card-head">
@@ -665,6 +978,7 @@ function cardHtml(t) {
         <span class="chips">
           ${prog}
           ${rv}
+          ${doneBtn}
           <span class="qbtns">${btns}</span>
         </span>
       </div>
@@ -674,7 +988,10 @@ function cardHtml(t) {
 function renderMatrix() {
   const html = QUAD_ORDER.map(q => {
     const m = QUAD[q];
+    // 这里刻意**含已完成**: 卡片会以"已做完"样式留在矩阵里(后评估要用它的历史)。
+    // 但诊断区的占比只算未完成, 两个数字会不同 —— 所以下面标出已完成个数, 让它们能对上账。
     const list = state.tasks.filter(t => t.quadrant === q);
+    const doneN = list.filter(t => t.finished).length;
     const h = list.reduce((s, t) => s + (num(t.estimate_h) || 0), 0);
     const body = list.length
       ? list.map(cardHtml).join('')
@@ -687,13 +1004,17 @@ function renderMatrix() {
             ${q} · ${m.label}
             <span class="act" style="color:${m.color};background:${m.bg}">${m.action}</span>
           </div>
-          <div class="quad-meta">${list.length} 个${h > 0 ? ' · 估时 ' + fmt(h) + 'h' : ''}</div>
+          <div class="quad-meta">${list.length} 个${doneN ? '（含已完成 ' + doneN + '）' : ''}${h > 0 ? ' · 估时 ' + fmt(h) + 'h' : ''}</div>
         </div>
         <div class="quad-body">${body}</div>
       </div>`;
   }).join('');
   const el = document.getElementById('matrix');
   el.innerHTML = html;
+  // 两个都要绑: innerHTML 重建会连同旧的 dragstart 监听一起丢掉。
+  // 漏掉 bindDrag 的后果很隐蔽 —— 首屏能拖(init 里补绑过), 但任何一次 render()
+  // 之后就静默失效, 用户只会觉得"拖拽有时候坏"。
+  bindDrag(el);
   bindDrop(el);
 }
 
@@ -721,6 +1042,7 @@ function renderUnclassified() {
           ${t.q_hint ? `<span class="mini">推导建议 ${t.q_hint}</span>` : ''}
         </span>
         <span class="qbtns">
+          <button class="done-btn" title="标记完成（立即计入仪表盘）" onclick="doneTask('${esc(t.no)}')">✅</button>
           ${QUAD_ORDER.map(q => `<button class="qbtn" title="归入 ${q}" onclick="setQuadrant('${esc(t.no)}','${q}')">${q}</button>`).join('')}
         </span>
       </div>
@@ -756,15 +1078,20 @@ function bindDrop(root) {
 /* ---------------- 交互 ---------------- */
 function render() {
   renderDiag();
+  renderDash();
   renderMatrix();
   renderUnclassified();
+  renderWeekPool();   // 改估时后待安排区的"还差 Xh"要跟着变, 否则得刷新页面才更新
+  renderWeekFoot();   // 同理: 改象限后 wk-foot 里的 A/B/C/D 小时拆分要跟着变
   const total = state.tasks.length;
   const pool = pending();
   const unc = pool.filter(t => !t.quadrant).length;
+  // 措辞要准确: 已完成的任务仍出现在象限矩阵里(带"已做完"样式与后评估入口),
+  // 只是不计入象限占比与待安排池 —— 说"不参与统计"会与矩阵里的数字对不上
   document.getElementById('subtitle').textContent =
     '共 ' + total + ' 个任务 · 未完成 ' + pool.length + ' 个（已归类 ' +
     (pool.length - unc) + ' · 待归类 ' + unc + '）· 已完成 ' +
-    (total - pool.length) + ' 个不参与统计';
+    (total - pool.length) + ' 个不计入象限占比与待安排';
 }
 
 function post(url, payload) {
@@ -772,7 +1099,31 @@ function post(url, payload) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
-  }).then(r => r.json());
+  }).then(r => {
+    // 服务端未匹配路由时返回的是 HTML(404 页), 直接 r.json() 会抛异常,
+    // 各处 catch 就会统一报"连接服务器失败" —— 把路由/参数问题误导成网络问题。
+    const ct = r.headers.get('content-type') || '';
+    if (!r.ok || ct.indexOf('json') < 0) {
+      throw new Error(r.ok ? '服务端返回了非 JSON 响应' : '服务端返回 HTTP ' + r.status);
+    }
+    return r.json();
+  });
+}
+
+/* 标记完成。完成日期由服务端写当天, 完成后重新拉取一次
+   (completed_date / total_days / finished 都是服务端算的, 不能只在本地改) */
+function doneTask(no) {
+  const t = byNo(no);
+  if (!t) return;
+  confirmBox('把 <b>No.' + esc(no) + ' ' + esc(t.name) + '</b> 标记为已完成？<br><br>' +
+    '完成后会从象限里移出，并立即计入仪表盘（平均耗时、本周完成、估时偏差）。',
+    function () {
+      post('/api/complete_task', { no: String(no) }).then(d => {
+        if (!d.ok) { toast(d.error || '操作失败', 'err'); return; }
+        toast('No.' + no + ' 已完成', 'ok');
+        loadData();          // 重新拉取: 仪表盘要立刻反映这次完成
+      }).catch(() => toast('连接服务器失败，请确认已启动 serve_task_flow.py', 'err'));
+    }, '完成任务');
 }
 
 function setQuadrant(no, q) {
@@ -836,11 +1187,20 @@ function saveHours() {
   if (!t) return;
   const est = num(document.getElementById('est-h').value);
   const act = num(document.getElementById('act-h').value);
-  Promise.all([
-    post('/api/set_estimate', { no: String(no), estimate_h: est }),
-    post('/api/set_actual', { no: String(no), actual_h: act })
-  ]).then(rs => {
-    if (!rs[0].ok || !rs[1].ok) { toast((rs[0].error || rs[1].error) || '保存失败', 'err'); return; }
+  // 必须顺序提交, 不能用 Promise.all: 服务端是多线程, 两个端点都走
+  // "读整个 JSON → 改一个字段 → 整文件写回", 并行时后写者会覆盖先写者的改动。
+  // 本项目在 adoptAllHints() 里已写明这条原则, 这里不能例外。
+  post('/api/set_estimate', { no: String(no), estimate_h: est }).then(r1 => {
+    if (!r1.ok) { toast(r1.error || '预估工时保存失败', 'err'); return null; }
+    return post('/api/set_actual', { no: String(no), actual_h: act });
+  }).then(r2 => {
+    if (r2 === null) return;                       // 前一个已失败, 不再往下走
+    if (!r2.ok) {
+      // 第一个已落盘、第二个没有 —— 说清楚, 否则用户以为整次保存都失败了
+      toast('预估工时已保存，但实际投入未保存：' + (r2.error || '未知错误'), 'err');
+      loadData();                                  // 拉回服务端真实状态, 避免本地与服务端不一致
+      return;
+    }
     t.estimate_h = est;
     t.actual_h = act;
     closeModal('m-est');
@@ -867,9 +1227,27 @@ function hm(h) {
   return hh + ':' + (mm < 10 ? '0' : '') + mm;
 }
 
-function parseYmd(s) { return new Date(String(s).replace(/\//g, '-')); }
+/* 按**本地时区**构造日期。不能用 new Date("2026-09-14") —— 那会被当成 UTC 午夜解析,
+   在西半球时区会落到本地前一天, 让 getDay() 算出的"周几"整体错位一天。 */
+function parseYmd(s) {
+  const m = String(s || '').match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/);
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(NaN);
+}
 function two(n) { return (n < 10 ? '0' : '') + n; }
 function md(d) { return (d.getMonth() + 1) + '/' + two(d.getDate()); }
+function fmtYmd(d) { return d.getFullYear() + '/' + two(d.getMonth() + 1) + '/' + two(d.getDate()); }
+
+/* 本周周一(YYYY/MM/DD) —— getDay(): 0=周日, 故 (getDay()+6)%7 得到 0=周一 */
+function thisWeekStart() {
+  const t = new Date();
+  return fmtYmd(new Date(t.getTime() - ((t.getDay() + 6) % 7) * 86400000));
+}
+
+function shiftWeek(delta) {
+  if (delta === 0) { loadWeekPlan(''); return; }        // 0 = 回到本周
+  const cur = parseYmd(state.plan.week_start || TODAY);
+  loadWeekPlan(fmtYmd(new Date(cur.getTime() + delta * 7 * 86400000)));
+}
 
 function slotHtml(s, idx) {
   const t = byNo(s.no);
@@ -895,7 +1273,11 @@ function renderWeek() {
   for (let i = 0; i < 7; i++) days.push(new Date(ws.getTime() + i * 86400000));
   const today = new Date();
 
-  document.getElementById('wk-range').textContent = md(days[0]) + ' – ' + md(days[6]);
+  const isThisWeek = plan.week_start === thisWeekStart();
+  document.getElementById('wk-range').textContent =
+    md(days[0]) + ' – ' + md(days[6]) + (isThisWeek ? '（本周）' : '');
+  const back = document.getElementById('wk-back');
+  if (back) back.style.display = isThisWeek ? 'none' : '';
   const wcnt = document.getElementById('wk-cnt');
   if (wcnt) wcnt.textContent = plan.slots.length ? '（' + plan.slots.length + ' 个时段）' : '';
 
@@ -943,6 +1325,7 @@ function renderWeek() {
   bindWeekDrop();
   renderWeekFoot();
   renderWeekPool();
+  renderWeekReview();
 }
 
 function renderWeekFoot() {
@@ -998,7 +1381,7 @@ function renderWeekPool() {
     return '<div class="wk-chip" draggable="true" data-no="' + esc(t.no) + '">' +
       (q ? '<span class="wq" style="color:' + q.color + ';background:' + q.bg + '">' + t.quadrant + '</span>' : '') +
       '<span class="wn">' + esc(t.name) + '</span>' +
-      '<span class="wh">' + tag + '</span>' +
+      '<span class="wh" title="点击修改预估工时" onclick="event.stopPropagation();openHours(\'' + esc(t.no) + '\')">' + tag + '</span>' +
       '</div>';
   }).join('');
   box.querySelectorAll('.wk-chip').forEach(c => {
@@ -1060,37 +1443,43 @@ function addSlot(no, day, hour) {
     }
   }
 
-  segs.forEach(s => state.plan.slots.push({
+  const next = state.plan.slots.concat(segs.map(s => ({
     no: String(no), day: day, from: s[0], to: s[1]
-  }));
+  })));
   const desc = segs.map(s => hm(s[0]) + '–' + hm(s[1])).join('、');
   if (left > 0.001) {
-    savePlan('已排 ' + desc + '（共 ' + fmt(added) + 'h），当天还差 ' + fmt(left) + 'h');
+    savePlan(next, '已排 ' + desc + '（共 ' + fmt(added) + 'h），当天还差 ' + fmt(left) + 'h');
   } else {
-    savePlan('已排 ' + WK.names[day - 1] + ' ' + desc + '（' + fmt(added) + 'h）');
+    savePlan(next, '已排 ' + WK.names[day - 1] + ' ' + desc + '（' + fmt(added) + 'h）');
   }
 }
 
 function delSlot(idx) {
-  state.plan.slots.splice(idx, 1);
-  savePlan('已移出时间表');
+  savePlan(state.plan.slots.filter((_, i) => i !== idx), '已移出时间表');
 }
 
-function savePlan(msg) {
-  const plan = state.plan;
-  post('/api/week_plan', { week_start: plan.week_start, slots: plan.slots }).then(d => {
+/* 提交周计划。**先提交、成功后才改本地** ——
+   反过来(先改本地再提交)一旦失败就会留下脏状态: 内存里已经改了, 服务端没改,
+   而且之后任何一次 renderWeek() 都会拿这份脏数据重绘, UI 与服务端长期不一致。
+   调用方传"新值", 由这里负责在成功后落到 state.plan。 */
+function savePlan(nextSlots, msg) {
+  const week = state.plan.week_start;
+  post('/api/week_plan', { week_start: week, slots: nextSlots }).then(d => {
     if (!d.ok) { toast(d.error || '保存失败', 'err'); return; }
+    // 同 saveWeekReview: 回调里现取 state.plan, 避免等待期间翻周后写到已脱离的旧对象上
+    if (state.plan.week_start !== week) { loadWeekPlan(week); return; }
+    state.plan.slots = Array.isArray(d.slots) ? d.slots : nextSlots;  // 服务端清洗后的结果
+    state.plan.review = d.review || null;   // 服务端一并带回(写排期不动自评)
     renderWeek();
     if (msg) toast(msg, 'ok');
   }).catch(() => toast('连接服务器失败，请确认已启动 serve_task_flow.py', 'err'));
 }
 
 function clearWeek() {
-  if (!state.plan.slots.length) { toast('本周还没有安排', ''); return; }
-  confirmBox('清空本周已安排的 ' + state.plan.slots.length +
+  if (!state.plan.slots.length) { toast('这一周还没有安排', ''); return; }
+  confirmBox('清空 ' + state.plan.week_start + ' 那一周已安排的 ' + state.plan.slots.length +
     ' 个时段？<br><br>任务本身不会被删除，只是从时间表上拿下来。', function () {
-    state.plan.slots = [];
-    savePlan('已清空本周安排');
+    savePlan([], '已清空本周安排');
   }, '清空本周');
 }
 
@@ -1120,26 +1509,109 @@ function openSlot(idx) {
 }
 
 function saveSlot() {
-  const s = state.plan.slots[editingSlot];
+  const idx = editingSlot;
+  const s = state.plan.slots[idx];
   if (!s) return;
   const f = Math.max(WK.start, Math.min(WK.end - 0.5,
     parseFloat(document.getElementById('sl-from').value) || s.from));
   const t = Math.max(f + 0.5, Math.min(WK.end,
     parseFloat(document.getElementById('sl-to').value) || s.to));
-  s.from = f;
-  s.to = t;
   closeModal('m-slot');
-  savePlan('已更新时段');
+  // 不直接改 s: 交给 savePlan 在提交成功后统一落到 state.plan, 避免失败留下脏状态
+  savePlan(state.plan.slots.map((x, i) =>
+    i === idx ? { no: x.no, day: x.day, from: f, to: t } : x), '已更新时段');
 }
 
-function loadWeekPlan() {
-  fetch('/api/week_plan').then(r => r.json()).then(d => {
+/* week 为空 = 本周(由服务端规范化); 传入具体周一则查看那一周 */
+function loadWeekPlan(week) {
+  const q = week ? '?week=' + encodeURIComponent(week) : '';
+  fetch('/api/week_plan' + q).then(r => r.json()).then(d => {
     if (d && d.slots) { state.plan = d; renderWeek(); }
-  }).catch(() => {});
+  }).catch(() => {
+    // 不能静默失败: 直接双击打开 html 文件时 fetch 必失败, 表现为"点了没反应"
+    toast('读取周计划失败 —— 请确认页面是通过本地服务器打开的', 'err');
+  });
+}
+
+/* ---------------- 本周自评 ---------------- */
+/* 与排期同存 week_plan.json, 但走独立端点: 写自评不碰 slots, 写排期不碰自评 */
+function renderWeekReview() {
+  const box = document.getElementById('wk-rev');
+  const btn = document.getElementById('wk-rev-btn');
+  const r = state.plan.review;
+  if (btn) btn.textContent = r ? '📝 自评 ✓' : '📝 自评';
+  if (!r) { box.innerHTML = ''; return; }
+  // 快照一起显示: 以后回看时能知道"当时排了多少", 而不是用今天的数字去解释当时的判断
+  const meta = [];
+  if (r.at) meta.push('写于 ' + esc(r.at));
+  if (typeof r.plan_h === 'number') {
+    meta.push('当时已排 ' + fmt(r.plan_h) + 'h / ' + (r.slot_n || 0) + ' 个时段');
+  }
+  if (typeof r.done_n === 'number') {
+    meta.push('本周已完成 ' + r.done_n + ' 个' +
+      (r.done_h ? '（净投入 ' + fmt(r.done_h) + 'h）' : ''));
+  }
+  box.innerHTML = '<div class="rev-box">' + esc(r.text) + '</div>' +
+    (meta.length ? '<div class="rev-meta">' + meta.join(' · ') + '</div>' : '');
+}
+
+function openWeekReview() {
+  const week = state.plan.week_start || thisWeekStart();
+  const r = state.plan.review;
+  // 标题跟着实际查看的周走 —— 翻到历史周还写"本周自评"会和副标题自相矛盾
+  const isThis = week === thisWeekStart();
+  document.getElementById('wrev-title').textContent = isThis ? '本周自评' : '周自评（' + week + '）';
+  document.getElementById('wrev-sub').textContent =
+    week + ' 那一周 · 已排 ' + state.plan.slots.length + ' 个时段' +
+    (isThis ? '' : ' · 这是历史周，补写的自评会记在那一周名下');
+  document.getElementById('wrev-text').value = r ? r.text : '';
+  openModal('m-wrev');
+}
+
+function saveWeekReview() {
+  const week = state.plan.week_start || thisWeekStart();
+  const text = document.getElementById('wrev-text').value.trim();
+  const now = new Date();
+  const stamp = fmtYmd(now) + ' ' + two(now.getHours()) + ':' + two(now.getMinutes());
+  // 两类快照: "排了多少"(计划侧) 与 "做完了多少"(实际侧)。
+  // 只存文字的话, 以后回看只能用今天的数字去解释当时的结论, 很容易误判。
+  // "本周已完成"的口径与仪表盘一致: completed_date 落在这一周内。
+  const ws = parseYmd(week).getTime();
+  if (isNaN(ws)) {   // 周不合法时宁可什么都不记 —— 否则 ms >= NaN 恒为假, 会静默记成"完成 0 个"
+    toast('这一周的日期不合法，无法记录自评', 'err');
+    return;
+  }
+  const weekDone = state.tasks.filter(t => {
+    if (!t.finished || !t.completed_date) return false;
+    const ms = parseYmd(t.completed_date).getTime();
+    return !isNaN(ms) && ms >= ws && ms < ws + 7 * 86400000;
+  });
+  post('/api/week_review', {
+    week_start: week,
+    text: text,
+    at: stamp,
+    plan_h: state.plan.slots.reduce((s, x) => s + (x.to - x.from), 0),
+    slot_n: state.plan.slots.length,
+    done_n: weekDone.length,
+    done_h: weekDone.reduce((s, t) => s + (num(t.actual_h) || 0), 0)
+  }).then(d => {
+    if (!d.ok) { toast(d.error || '保存失败', 'err'); return; }
+    // 不要在回调里用闭包捕获的 plan: 等待期间用户可能翻周, state.plan 已被换成新对象,
+    // 这时写回旧对象会表现为"提示保存成功但界面没变"。改成现取, 并校验周是否一致。
+    if (state.plan.week_start !== week) { loadWeekPlan(week); return; }
+    state.plan.review = d.review || null;
+    closeModal('m-wrev');
+    renderWeekReview();
+    toast(text ? '自评已保存' : '自评已清除', 'ok');
+  }).catch(e => toast(e && e.message ? e.message : '连接服务器失败', 'err'));
 }
 
 /* ---------------- 后评估 ---------------- */
-const ASK_OPTIONS = ['需求不清', '依赖他人', '返工', '想当然'];
+/* 估时偏差的常见原因。取值必须落在 meta.BLOCKER_ORDER 内 ——
+   这里直接存进 blockers 的 type 字段, 写一个枚举外的词(原先写的"想当然")会留下
+   没有颜色/含义映射的孤立类型, "最常因为什么卡住"的统计随之失真。
+   加了 filter 兜底: 即使以后手滑写错, 也会被丢掉而不是污染数据。 */
+const ASK_OPTIONS = ['需求不清', '依赖他人', '返工', '估算失误'].filter(k => BLOCKER[k]);
 
 function openReview(no) {
   const t = byNo(no);
@@ -1303,7 +1775,7 @@ function calcCheck() {
   const m = QUAD[q];
   box.innerHTML = '<b>建议归入 ' + q + ' · ' + m.label + '（' + m.action + '）</b><br>' +
     '有价值：' + (value ? '是' : '否') + ' · 难以推卸：' + (stuck ? '是' : '否') + '<br>' +
-    (q === 'C' ? '注意：C 类有 15% 上限，先想清楚能不能委托。' : '');
+    (q === 'C' ? '注意：C 类有 ' + QUAD.C.max + '% 上限，先想清楚能不能委托。' : '');
   document.getElementById('chk-apply').classList.remove('hidden');
   document.getElementById('chk-apply').dataset.q = q;
 }
@@ -1343,10 +1815,16 @@ function toast(msg, type) {
   toastTimer = setTimeout(() => { el.className = ''; }, 2600);
 }
 
+/* 拉取任务并重绘。只在页面加载、以及本页数据变更后各调用一次 ——
+   不做定时轮询: 数据源就是本页操作与偶尔的外部编辑, 没必要让页面空转 */
 function loadData() {
   fetch('/api/tasks').then(r => r.json()).then(data => {
-    if (Array.isArray(data) && data.length) { state.tasks = data; render(); }
-  }).catch(() => {});
+    if (!Array.isArray(data) || !data.length) return;
+    state.tasks = data;
+    render();
+  }).catch(() => {
+    toast('读取任务失败 —— 请确认页面是通过本地服务器打开的', 'err');
+  });
 }
 
 function init() {
@@ -1357,14 +1835,16 @@ function init() {
     state.dayH = parseFloat(bd.value) || 0;
     state.bufH = parseFloat(bb.value) || 0;
     state.daysW = parseFloat(bw.value) || 1;
-    renderDiag();   // 预算只影响小时换算, 不落盘
+    renderDiag();      // 预算只影响小时换算, 不落盘
+    renderWeekFoot();  // wk-foot 里的"净可安排 Xh"也要跟着变
   }));
   document.querySelectorAll('.modal-bg').forEach(bg => {
     bg.addEventListener('click', e => { if (e.target === bg) bg.classList.add('hide'); });
   });
   state.plan = {
     week_start: (WEEK_PLAN && WEEK_PLAN.week_start) || '',
-    slots: (WEEK_PLAN && WEEK_PLAN.slots) || []
+    slots: (WEEK_PLAN && WEEK_PLAN.slots) || [],
+    review: (WEEK_PLAN && WEEK_PLAN.review) || null
   };
   WK.start = WEEK_META.start;
   WK.end = WEEK_META.end;
@@ -1376,7 +1856,8 @@ function init() {
   fillHourOptions();
   render();
   renderWeek();
-  bindDrag(document);
+  // 不在这里 bindDrag(document): 各渲染函数自己负责绑(见 renderMatrix / renderUnclassified),
+  // 否则会给人"document 上绑一次就一劳永逸"的错觉 —— innerHTML 重建后其实已经失效
   loadData();
   loadWeekPlan();
 }
@@ -1396,6 +1877,12 @@ def build_html(tasks):
     blocker_options = "".join(
         '<option value="%s">%s</option>' % (b, b) for b in BLOCKER_ORDER
     )
+
+    cat_meta = {
+        c: {"color": CATEGORY_COLOR.get(c, CATEGORY_FALLBACK_COLOR),
+            "icon": CATEGORY_ICON.get(c, CATEGORY_FALLBACK_ICON)}
+        for c in CATEGORY_ORDER
+    }
 
     budget = {
         "day_hours": DAY_HOURS,
@@ -1423,6 +1910,8 @@ def build_html(tasks):
             .replace("__PRIORITY_META__", js(PRIORITY_META))
             .replace("__PRIO_ORDER__", js(PRIORITY_ORDER))
             .replace("__BLOCKER_META__", js(BLOCKER_META))
+            .replace("__CAT_META__", js(cat_meta))
+            .replace("__CAT_ORDER__", js(CATEGORY_ORDER))
             .replace("__BUDGET__", js(budget))
             .replace("__WEEK_META__", js(week_meta))
             .replace("__WEEK_PLAN__", js(plan))

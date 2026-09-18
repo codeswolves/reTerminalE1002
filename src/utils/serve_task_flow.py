@@ -13,7 +13,7 @@ import os
 import sys
 from datetime import date
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUTPUT_DIR = os.path.join(BASE_DIR, "output", "tasks")
@@ -28,6 +28,7 @@ GEN_DIR = os.path.join(BASE_DIR, "src", "generators")
 if GEN_DIR not in sys.path:
     sys.path.insert(0, GEN_DIR)
 from generate_task_flow import (  # noqa: E402
+    _to_hours,
     parse_date,
     read_tasks,
     read_tasks_raw,
@@ -35,7 +36,7 @@ from generate_task_flow import (  # noqa: E402
     write_tasks_raw,
 )
 from meta import DEFAULT_CATEGORY, DEFAULT_PRIORITY, is_quadrant  # noqa: E402
-from week_plan import read_week_plan, write_week_plan  # noqa: E402
+from week_plan import read_week_plan, write_week_plan, write_week_review  # noqa: E402
 from generate_project import (  # noqa: E402
     build_projects,
     add_project as proj_add,
@@ -150,7 +151,9 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
         if path == "/api/tasks":
             self._send_json(read_tasks())
         elif path == "/api/week_plan":
-            self._send_json(read_week_plan())
+            # ?week=YYYY/MM/DD 可查指定周(页面翻看上一周/下一周); 缺省为本周
+            week = (parse_qs(parsed.query).get("week") or [""])[0]
+            self._send_json(read_week_plan(week))
         elif path == "/api/projects":
             self._send_json(build_projects())
         elif path.startswith("/project/"):
@@ -276,6 +279,11 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
             # 未归类时不写该字段(与"取消归类 = 删除字段"保持一致)
             if quadrant:
                 new_task["quadrant"] = quadrant
+            # 工时: 空或 0 = 不写字段 —— "未估算"是合法状态, 不能按 0 计入统计(§7.3)
+            for key in ("estimate_h", "actual_h"):
+                h = _to_hours(data.get(key))
+                if h is not None:
+                    new_task[key] = h
             tasks.append(new_task)
             write_tasks_raw(tasks)
 
@@ -335,6 +343,16 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
             if s_d and d_d and d_d < s_d:
                 self._send_json({"ok": False, "error": "计划截止日期不能早于计划开始日期"})
                 return
+
+            # 估时 / 实际净投入: 传空值或 0 = 清除字段
+            for key, label in (("estimate_h", "预估工时"), ("actual_h", "实际净投入")):
+                if key not in data:
+                    continue
+                h = _to_hours(data.get(key))
+                if h is None:
+                    target.pop(key, None)
+                else:
+                    target[key] = h
 
             nodes = target.setdefault("nodes", [])
             if not nodes:
@@ -518,14 +536,33 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
             self._send_json({"ok": True, "count": len(blockers)} if ok
                             else {"ok": False, "error": err})
 
+        elif path == "/api/week_review":
+            # 周自评: 与排期同存 week_plan.json, 但分成两个端点 ——
+            # 写自评不该触碰 slots, 写排期也不该触碰 review
+            data = self._read_body()
+            res = write_week_review(
+                data.get("week_start"),
+                data.get("text"),
+                data.get("at"),
+                {
+                    "plan_h": data.get("plan_h"),
+                    "slot_n": data.get("slot_n"),
+                    "done_n": data.get("done_n"),
+                    "done_h": data.get("done_h"),
+                },
+            )
+            self._send_json({"ok": True, "week_start": res["week_start"],
+                             "review": res["review"]})
+
         elif path == "/api/week_plan":
             data = self._read_body()
-            plan = write_week_plan({
-                "week_start": data.get("week_start"),
-                "slots": data.get("slots"),
-            })
+            plan = write_week_plan(data.get("week_start"), data.get("slots"))
+            # 把清洗后的 slots 与 review 一并带回: 前端据此更新本地状态,
+            # 少带一个就会让它在下次重绘时"忘掉"这件事(自评曾因此从界面上消失)
             self._send_json({"ok": True, "count": len(plan["slots"]),
-                             "week_start": plan["week_start"]})
+                             "week_start": plan["week_start"],
+                             "slots": plan["slots"],
+                             "review": plan["review"]})
 
         else:
             self.send_error(404)

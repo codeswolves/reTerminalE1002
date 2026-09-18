@@ -163,6 +163,22 @@ def blocker_meta(key):
 # ---------------------------------------------------------------------------
 # 模板注入辅助
 # ---------------------------------------------------------------------------
+def _embed(obj):
+    """把 Python 对象转成可安全内嵌进 <script> 的 JSON 文本。
+
+    两处都要挡:
+    - "</" 会提前关闭 script 标签
+    - "<!--" 会让解析器进入 script-data-escaped 状态, 后续内容被当成注释吞掉
+    自评这类自由文本较长, 撞上的概率虽低, 但一旦撞上整页 JS 全废。
+    """
+    return (json.dumps(obj, ensure_ascii=False)
+            .replace("</", "<\\/")
+            .replace("<!--", "<\\!--"))
+
+
 def js(obj):
-    """序列化为可安全嵌入 <script> 的 JSON(转义 </ 防止提前闭合脚本标签)。"""
-    return json.dumps(obj, ensure_ascii=False).replace("</", "<\\/")
+    """序列化为可安全嵌入 <script> 的 JSON。
+
+    统一走 _embed(), 页面生成器里的 __xxx__ 占位符替换一律用它。
+    """
+    return _embed(obj)

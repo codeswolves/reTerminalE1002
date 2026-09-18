@@ -548,6 +548,8 @@ function openAddTask() {{
   document.getElementById('task-due').value = '';
   document.getElementById('task-note').value = '';
   document.getElementById('task-owner').value = '';
+  document.getElementById('task-estimate').value = '';
+  document.getElementById('task-actual').value = '';
   document.getElementById('add-modal-bg').classList.remove('hide');
 }}
 
@@ -561,11 +563,15 @@ function openEditTask(no) {{
   document.getElementById('task-submit-btn').textContent = '保存修改';
   document.getElementById('task-name').value = t.name || '';
   document.getElementById('task-priority').value = t.priority || 'medium';
+  // 必须回填象限: 漏了会导致"打开编辑再保存"把已归类的任务清成未归类
+  document.getElementById('task-quadrant').value = t.quadrant || '';
   document.getElementById('task-category').value = t.category || '个人';
   document.getElementById('task-progress').value = t.today || 0;
   // 数据存 YYYY/MM/DD, 而 <input type="date"> 只认 YYYY-MM-DD
   document.getElementById('task-start').value = (t.start || '').split('/').join('-');
   document.getElementById('task-due').value = (t.due || '').split('/').join('-');
+  document.getElementById('task-estimate').value = t.estimate_h || '';
+  document.getElementById('task-actual').value = t.actual_h || '';
   const first = (t.nodes && t.nodes[0]) || {{}};
   document.getElementById('task-owner').value = first.owner || '';
   document.getElementById('task-note').value = first.note || '';
@@ -592,7 +598,11 @@ function submitTask() {{
   if (start && due && due < start) {{ toast('计划截止不能早于计划开始', 'err'); return; }}
   const isEdit = editingTaskNo !== null;
   const quadrant = document.getElementById('task-quadrant').value;
-  const payload = {{name, priority, category, quadrant, today, note, owner, start, due}};
+  const estimate_h = parseFloat(document.getElementById('task-estimate').value) || 0;
+  const actual_h = parseFloat(document.getElementById('task-actual').value) || 0;
+  if (estimate_h < 0 || actual_h < 0) {{ toast('工时不能为负数', 'err'); return; }}
+  const payload = {{name, priority, category, quadrant, today, note, owner, start, due,
+                    estimate_h, actual_h}};
   if (isEdit) payload.no = editingTaskNo;
   fetch(isEdit ? '/api/edit_task' : '/api/add_task', {{
     method: 'POST',
@@ -686,6 +696,16 @@ if (document.readyState === 'loading') {{
       <div>
         <label>计划截止 (可选)</label>
         <input type="date" id="task-due">
+      </div>
+    </div>
+    <div class="two">
+      <div>
+        <label>预估工时 (小时)</label>
+        <input type="number" id="task-estimate" min="0" step="0.5" placeholder="如 4">
+      </div>
+      <div>
+        <label>实际净投入 (小时)</label>
+        <input type="number" id="task-actual" min="0" step="0.5" placeholder="完成后回填">
       </div>
     </div>
     <label>备注</label>

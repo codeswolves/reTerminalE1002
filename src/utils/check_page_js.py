@@ -23,30 +23,53 @@ DEFAULT_PAGES = [
     os.path.join(BASE_DIR, "output", "tasks", "quadrant.html"),
     os.path.join(BASE_DIR, "output", "tasks", "tasks_view.html"),
     os.path.join(BASE_DIR, "output", "tasks", "task_flow.html"),
+    os.path.join(BASE_DIR, "output", "project", "project_index.html"),
+    os.path.join(BASE_DIR, "output", "project", "project_tree.html"),
 ]
 
 # 最小 DOM mock: 只要够页面 init() 跑完即可
 MOCK = """
 const __els = {};
+// 每个 id 独立一个对象(这样才能按 id 检查渲染结果), 但方法共用一份。
+// 方法要够全: 返回一个"什么都接得住"的假元素, 否则页面调用 appendChild 之类
+// 会直接抛错, 让人误以为页面有 bug, 其实是 mock 不全。
+globalThis.__fakeEl = {
+  addEventListener(){}, removeEventListener(){},
+  classList: { add(){}, remove(){}, toggle(){}, contains(){ return false; } },
+  style: {}, dataset: {}, textContent: '', innerHTML: '', value: '', className: '',
+  setAttribute(){}, removeAttribute(){}, getAttribute(){ return null; },
+  appendChild(){}, removeChild(){}, insertBefore(){}, replaceChild(){},
+  cloneNode(){ return globalThis.__fakeEl; },
+  querySelector(){ return globalThis.__fakeEl; }, querySelectorAll(){ return []; },
+  closest(){ return globalThis.__fakeEl; }, focus(){}, click(){},
+  scrollIntoView(){}, getBoundingClientRect(){ return { top:0,left:0,width:0,height:0 }; }
+};
 function __el(id) {
-  if (!__els[id]) __els[id] = {
-    innerHTML: '', textContent: '', value: '', className: '',
-    classList: { add(){}, remove(){}, contains(){ return false; } },
-    addEventListener(){}, querySelectorAll(){ return []; },
-    dataset: {}, style: {}
-  };
+  if (!__els[id]) __els[id] = Object.assign({}, globalThis.__fakeEl, { id: id });
   return __els[id];
 }
 globalThis.__els = __els;
 globalThis.document = {
   getElementById: __el,
+  querySelector(){ return globalThis.__fakeEl; },
   querySelectorAll(){ return []; },
-  addEventListener(){}
+  createElement(){ return Object.assign({}, globalThis.__fakeEl); },
+  addEventListener(){},
+  body: globalThis.__fakeEl,
+  documentElement: globalThis.__fakeEl
 };
 globalThis.window = globalThis;
+// 页面用 location.search 读 URL 参数(如 ?project=xxx), 没有它会直接抛 ReferenceError
+globalThis.location = { search: '', href: 'http://localhost/', pathname: '/', hash: '' };
 globalThis.fetch = () => Promise.reject(new Error('no network'));
 globalThis.alert = () => {};
 globalThis.confirm = () => false;
+// 定时器必须禁掉: 页面里的 setInterval(轮询) 会让 node 进程无法退出, 脚本挂在 30s 超时
+globalThis.setInterval = () => 0;
+globalThis.clearInterval = () => {};
+globalThis.setTimeout = () => 0;
+globalThis.clearTimeout = () => {};
+globalThis.document.hidden = false;
 """
 
 # 跑完之后报告各区域渲染出的内容长度 —— 全是 0 就说明渲染没发生

@@ -2,7 +2,7 @@
 
 ## 1. 背景
 
-四个交互页面（任务清单、任务流程树、项目索引、项目图）最初只针对桌面浏览器设计，
+最初的四个交互页面（任务清单、任务流程树、项目索引、项目图）只针对桌面浏览器设计，
 CSS 里没有任何 `@media` 规则。在手机窄屏上会出现两类问题：
 
 1. **横向 flex 被挤压**：顶栏用 `justify-content: space-between`，右侧统计卡带固定
@@ -19,10 +19,18 @@ CSS 里没有任何 `@media` 规则。在手机窄屏上会出现两类问题：
 | 任务流程树 `task_flow.html` | `generate_task_flow.py` | ✅ |
 | 项目索引 `project_index.html` | `generate_project.py` | ✅ |
 | 项目图 `project_tree.html` | `generate_project.py` | ✅ |
+| 时间四象限 `quadrant.html` | `generate_quadrant.py` | ✅ |
 | 仪表盘 `dashboard.html` | `generate_dashboard.py` | ❌ 墨水屏固定 800×480 |
 
 仪表盘的 `.dash` 是硬编码的 `width: 800px; height: 480px`，输出目标就是 E1002
 墨水屏的物理分辨率，**不做响应式** —— 改了反而会破坏截图与推送流程。
+
+> 注意区分两个"仪表盘"：§2 表格里 **❌ 的 `dashboard.html`** 是墨水屏那个；
+> `quadrant.html` 页面**内部**也有一块叫"仪表盘"的区域（平均完成时间 / 每周完成 /
+> 产出成果 / 估时偏差），它属于四象限页，**是参与适配的**。
+
+四象限页是后来新增的，建它时这份文档已经写完、也不在它的适配范围内，
+所以第一版漏掉了窄屏处理（见 §5.4）。
 
 ## 3. 断点与规则
 
@@ -58,6 +66,23 @@ CSS 里没有任何 `@media` 规则。在手机窄屏上会出现两类问题：
 - 窄屏：隐藏顶栏 `.spacer`、画布高度解锁（`max-height: none`）便于整页滚动
 - 触屏：节点操作按钮 `.pn-acts` 原依赖 `.pnode:hover` 显示，改为常显
 
+### 4.5 时间四象限 `quadrant.html`
+
+- 窄屏：四象限矩阵 `.matrix` 改单列、诊断行 `.diag-row` 与后评估事实表 `.facts` 改单列、
+  卡片底部 `.card-foot` 由左右两端改为上下堆叠
+- **仪表盘区域** `.dash` 由 4 列改 **2 列** —— 4 列时每格只剩约 78px，24px 的大数字会被挤到换行
+- **分类占比** `.dist-row` 隐藏"计划 / pp 差"两列，只留名称、占比条、百分比
+- **趋势图** 12 组柱与日期标签的间距、字号一并缩小
+- 触屏：`.est` / `.hint` / `.qbtn` 放大点击区（`.qbtn` 24×24）
+
+**周时间表是唯一需要横向滚动的部分**：7 天 × 105px = 820px，物理上放不进 390px。
+它被包在 `.wk-scroll` 里横向滚动，这是有意的 —— 拖动排期需要格子够大。
+（若日后要改，方向是"只显示今天 + 左右切日期"或"每天一屏"，而不是压缩格子。）
+
+同一张卡片上，"待安排"区的小时数是可点击的（改预估工时），
+卡片主体的点击也会打开工时弹窗 —— 触屏下这两处都依赖点击，
+不要把它们改成需要 hover 才显示。
+
 ## 5. 踩过的坑
 
 ### 5.1 不要覆盖统计卡的 `min-width`
@@ -84,8 +109,43 @@ CSS 里没有任何 `@media` 规则。在手机窄屏上会出现两类问题：
 findstr /C:"@media" output\tasks\task_flow.html output\project\project_index.html
 ```
 
+### 5.4 flex 项目的 `min-width` 默认不是 0
+
+趋势图的 X 轴是 12 个 `flex: 1` 的日期标签（`06/29`、`07/06` …），
+在 390px 屏上把容器撑破了 26px。
+
+原因不是空间不够，而是 **flex 项目的 `min-width` 默认值是 `auto`** ——
+意思是"宽度不能小于我的内容宽度"。所以 `flex: 1` 分配下来的结果若小于内容宽度，
+它不会压缩，而是直接溢出。
+
+```css
+/* 加 min-width:0 才允许压到内容宽度以下 */
+.dash-x div { flex: 1; min-width: 0; }
+```
+
+这与 §5.1 是同一类问题的两面：**§5.1 是 `min-width: 0` 加错了地方（覆盖了保护值），
+这里是该加而没加。** 判断方法：需要"允许压缩"才加 `min-width: 0`；
+本来就有最小值保护的（如统计卡 `min-width: 70px`）不要碰。
+
+### 5.5 新建页面容易漏进这份文档
+
+四象限页是后加的，第一版上线时**仪表盘仍是 4 列、趋势图标签溢出** ——
+因为这份文档的适配范围表里没有它，改动时不会想到要对照检查。
+
+**新增页面时，除了写生成器，还要回到本文档的 §2 范围表加上一行**，
+否则"已适配"这个结论会随页面增加而悄悄失效。
+
+验证方法（用真实手机视口跑，而不是肉眼看桌面缩小版）：
+
+```python
+# Playwright: 排除可滚动容器内部的元素, 只找真正撑破容器的
+pg = browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
+# 检查每个元素的 getBoundingClientRect().right 是否 > document.documentElement.clientWidth
+```
+
 ## 6. 相关文件
 
 - `src/generators/generate_tasks_view.py`
 - `src/generators/generate_task_flow.py`
 - `src/generators/generate_project.py`
+- `src/generators/generate_quadrant.py`

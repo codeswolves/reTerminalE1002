@@ -46,7 +46,6 @@ from meta import (  # noqa: E402
     CATEGORY_FALLBACK_ICON,
     CATEGORY_ICON,
     CATEGORY_ORDER,
-    DAY_BUFFER_H,
     DAY_HOURS,
     DAY_PLAN_H,
     DELIVERABLE_META,
@@ -56,6 +55,8 @@ from meta import (  # noqa: E402
     PRIORITY_ORDER,
     QUADRANT_META,
     QUADRANT_ORDER,
+    WEEK_BUFFER_H,
+    WEEK_GROSS_H,
     WEEK_PLAN_H,
     blocker_meta,
     js,
@@ -266,9 +267,10 @@ TEMPLATE = r"""<!DOCTYPE html>
     font-size: 10px; color: #98a3b5; letter-spacing: 4px;
   }
   .wk-slot {
-    position: absolute; left: 3px; right: 3px; border-radius: 7px; padding: 5px 8px 5px 7px;
+    position: absolute; left: 3px; right: 3px; border-radius: 7px; padding: 4px 8px 4px 7px;
     font-size: 11px; line-height: 1.35; overflow: hidden; cursor: pointer;
-    display: flex; flex-direction: column;
+    /* 内容垂直居中: 矮块里上下留白已被压到最小, 靠居中而不是顶部对齐来用满高度 */
+    display: flex; flex-direction: column; justify-content: center;
   }
   .wk-slot:hover { box-shadow: 0 1px 6px rgba(0,0,0,.1); }
   .wk-slot .ws-name { font-weight: 600; color: #1f2733; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -276,8 +278,28 @@ TEMPLATE = r"""<!DOCTYPE html>
   .wk-slot .ws-x { position: absolute; right: 4px; top: 2px; color: #b0b8c6; font-size: 11px; }
   .wk-slot .ws-x:hover { color: #d6453d; }
   .wk-slot.done { opacity: .6; }
+  /* 临时(突发)任务: 虚线内框 + 角标, 与"计划内"的实心块一眼可分。
+     它是记下来的时间, 不是排进去的计划, 视觉上就该有区别 */
+  .wk-slot.temp { outline: 1px dashed #c9a961; outline-offset: -4px; }
+  .ws-tmp {
+    display: inline-block; font-size: 9px; line-height: 14px; height: 14px; padding: 0 4px;
+    border-radius: 4px; background: #fdf4e3; color: #a8801f; margin-right: 4px; vertical-align: 1px;
+  }
+  /* 矮块(半小时): 缩字号、去掉上下留白、右侧给 ✕ 让位 ——
+     否则内容高度超过容器, 会被 overflow:hidden 裁成半截字 */
+  .wk-slot.sm { padding: 0 16px 0 6px; font-size: 10px; }
+  .wk-slot.sm .ws-name { line-height: 1.2; }
+  /* 角标跟着收: 14px 高的角标会把名称行撑高, 20px 的块里就不够用了 */
+  .wk-slot.sm .ws-tmp {
+    font-size: 8px; line-height: 12px; height: 12px; padding: 0 3px; margin-right: 3px;
+  }
+  .wk-slot.sm .ws-x { font-size: 10px; top: 1px; right: 3px; }
+  /* 矮块里虚线内框要贴得更近, 否则会压到文字 */
+  .wk-slot.sm.temp { outline-offset: -2px; }
   .wk-foot { font-size: 12px; color: #5a6577; line-height: 1.9; margin-top: 11px; padding-top: 9px; border-top: 1px solid #f0f3f8; }
   .wk-foot b { color: #1f2733; }
+  .wk-edit { color: #3b6fb0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+  .wk-edit:hover { color: #2d5a94; }
   /* 周自评展示区 */
   .wk-rev { margin-top: 11px; }
   .wk-rev .rev-box {
@@ -360,10 +382,12 @@ TEMPLATE = r"""<!DOCTYPE html>
   .modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
   .modal .sub { font-size: 12px; color: #8893a7; margin-bottom: 14px; }
   .modal label { display: block; font-size: 12px; color: #5a6577; margin: 12px 0 5px; }
-  .modal input[type=text], .modal input[type=number], .modal select, .modal textarea {
+  .modal input[type=text], .modal input[type=number], .modal input[type=date], .modal select, .modal textarea {
     width: 100%; padding: 8px 10px; border: 1px solid #d8dee9; border-radius: 8px;
     font-size: 13px; font-family: inherit; box-sizing: border-box;
   }
+  /* 两个并排字段(如 开始/结束): 用 grid 让两列等宽且标签对齐 */
+  .modal .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .modal-actions { display: flex; gap: 10px; margin-top: 18px; justify-content: flex-end; }
   .modal-actions button { padding: 7px 18px; border-radius: 8px; font-size: 13px; cursor: pointer; border: 1px solid #d8dee9; background: #fff; color: #3a4456; }
   .modal-actions .btn-primary { background: #3b6fb0; color: #fff; border-color: #3b6fb0; }
@@ -455,6 +479,9 @@ TEMPLATE = r"""<!DOCTYPE html>
     <div class="head-left">
       <a class="nav-link" href="tasks_view.html">← 任务清单</a>
       <a class="nav-link" href="task_flow.html">流程跟踪</a>
+      <!-- 相对链接: 项目页在 output/project/ 下, 靠服务端的 PROJECT_PAGES 路由转发
+           (公网博客是把它们平铺在站点根目录, 所以不能用 ../project/ 这种本地路径) -->
+      <a class="nav-link" href="project_index.html">项目管理</a>
     </div>
   </div>
 
@@ -467,6 +494,7 @@ TEMPLATE = r"""<!DOCTYPE html>
         <button class="wk-nav" onclick="shiftWeek(1)" title="下一周">›</button>
         <button class="est" id="wk-back" onclick="shiftWeek(0)">回到本周</button>
         <button class="est" id="wk-rev-btn" onclick="openWeekReview()">📝 自评</button>
+        <button class="est" onclick="openTempTask()" title="记录突发的临时事项，直接落到时间表上">＋ 临时任务</button>
         <button class="est" onclick="clearWeek()">清空本周</button>
       </div>
     </div>
@@ -485,8 +513,9 @@ TEMPLATE = r"""<!DOCTYPE html>
       <div class="panel-title">时间结构诊断</div>
       <div class="budget">
         每天 <input id="b-day" type="number" min="1" max="16" step="0.5">h
-        − 机动 <input id="b-buf" type="number" min="0" max="8" step="0.5">h
-        × <input id="b-days" type="number" min="1" max="7">天 =
+        × <input id="b-days" type="number" min="1" max="7">天
+        − 每周机动 <input id="b-wbuf" type="number" min="0" max="40" step="0.5"
+                     title="本周留给突发的时间。改这里会记到当前查看的那一周名下，不是全局设置">h =
         <b id="b-week">0</b>h/周
       </div>
     </div>
@@ -626,6 +655,49 @@ TEMPLATE = r"""<!DOCTYPE html>
   </div>
 </div>
 
+<!-- 记一笔临时(突发)任务 -->
+<div class="modal-bg hide" id="m-temp">
+  <div class="modal" style="width:400px">
+    <h3>记一笔临时任务</h3>
+    <div class="sub" id="tmp-sub"></div>
+    <label>这件事是什么</label>
+    <input type="text" id="tmp-name" placeholder="如：临时会议 / 线上故障排查 / 同事来求助">
+    <label>发生在哪天</label>
+    <input type="date" id="tmp-date">
+    <div class="two">
+      <div>
+        <label>开始</label>
+        <select id="tmp-from"></select>
+      </div>
+      <div>
+        <label>结束</label>
+        <select id="tmp-to"></select>
+      </div>
+    </div>
+    <div class="mini" id="tmp-hint"></div>
+    <div class="modal-actions">
+      <button onclick="closeModal('m-temp')">取消</button>
+      <button class="btn-primary" onclick="saveTempTask()">记到时间表</button>
+    </div>
+  </div>
+</div>
+
+<!-- 本周机动额度 -->
+<div class="modal-bg hide" id="m-buf">
+  <div class="modal" style="width:400px">
+    <h3>本周机动额度</h3>
+    <div class="sub" id="buf-sub"></div>
+    <label>这一周留给突发的时间（小时）</label>
+    <input type="number" id="buf-h" min="0" max="40" step="0.5">
+    <div class="mini" id="buf-hint"></div>
+    <div class="modal-actions">
+      <button onclick="closeModal('m-buf')">取消</button>
+      <button onclick="resetWeekBuffer()">恢复默认</button>
+      <button class="btn-primary" onclick="saveWeekBuffer()">保存</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg hide" id="m-cfm">
   <div class="modal" style="width:380px">
     <h3 id="cfm-title">确认操作</h3>
@@ -658,9 +730,10 @@ const TODAY = "__TODAY__";
 let state = {
   tasks: [],
   dayH: BUDGET.day_hours,
-  bufH: BUDGET.day_buffer_h,
   daysW: BUDGET.days_per_week,
-  plan: { week_start: '', slots: [] }
+  // 机动额度是**周属性**: 挂在 plan 上, 跟着翻周走。
+  // 不单独放一个 state.bufH —— 那样会出现"预算栏一个值、周表另一个值"的两份状态
+  plan: { week_start: '', slots: [], buffer_h: BUDGET.week_buffer_h }
 };
 let editingSlot = -1;
 let editing = null;   // 当前弹窗对应的任务编号
@@ -682,10 +755,24 @@ function fmt(v) {
 function byNo(no) { return state.tasks.find(t => String(t.no) === String(no)); }
 
 /* ---------------- 统计 ---------------- */
-function weekHours() { return Math.max(0, state.dayH - state.bufH) * state.daysW; }
+/* 当前查看那一周的机动额度(小时)。取不到就回落到默认值。 */
+function weekBufferH() {
+  const v = state.plan ? state.plan.buffer_h : null;
+  return (typeof v === 'number' && isFinite(v) && v >= 0) ? v : BUDGET.week_buffer_h;
+}
 
-/* 只有未完成任务参与统计与归类: 已完成的任务是历史, 混进来会稀释当前的时间结构 */
-function pending() { return state.tasks.filter(t => !t.finished); }
+/* 净可安排 = 每天毛可用 × 天数 − 每周机动。
+   机动是**整周一个池子**, 不是每天扣 1h —— 这样周三出一次 3h 的事故只是花掉池子的一部分,
+   不会立刻被判成"超支"; 反过来没出事的日子也不浪费额度(见 meta.WEEK_BUFFER_H)。 */
+function weekHours() {
+  return Math.max(0, state.dayH * state.daysW - weekBufferH());
+}
+
+/* 只有未完成任务参与统计与归类: 已完成的任务是历史, 混进来会稀释当前的时间结构。
+   临时(突发)任务同样排除 —— 它是**时间记录**, 不是待办:
+   放进来会让"待归类"堆满琐事, 还会把突发工时算进象限结构。
+   机动时间本就在象限分母之外(§1.3), 它的消耗在周表下方单列。 */
+function pending() { return state.tasks.filter(t => !t.finished && !t.temp); }
 
 function stats() {
   const pool = pending();
@@ -735,6 +822,10 @@ function renderDiag() {
   const st = stats();
   const wh = weekHours();
   document.getElementById('b-week').textContent = fmt(wh);
+  // 机动额度是周属性(翻周会变), 所以在这里回填而不是只在 init 里设一次。
+  // 只在值真的不同时才写 —— 否则会打断正在输入的用户
+  const bwb = document.getElementById('b-wbuf');
+  if (bwb && parseFloat(bwb.value) !== weekBufferH()) bwb.value = weekBufferH();
 
   // 一个任务都没估算时, 不要摆四行 "—" —— 那样完全看不出这张卡在干什么
   if (st.estN === 0) {
@@ -747,8 +838,8 @@ function renderDiag() {
       '</div>';
     document.getElementById('diag-foot').innerHTML =
       '百分比 = 各象限估时 ÷ 已估算总工时（任务池工作量结构）<br>' +
-      '小时数 = 目标百分比 × 净可安排 ' + fmt(state.dayH - state.bufH) +
-      'h/天（机动 ' + fmt(state.bufH) + 'h 在分母之外）';
+      '小时数 = 目标百分比 × 净可安排 ' + fmt(state.dayH * state.daysW - weekBufferH()) +
+      'h/周（每周机动 ' + fmt(weekBufferH()) + 'h 在分母之外）';
     return;
   }
 
@@ -804,8 +895,8 @@ function renderDiag() {
   }
   if (st.estN / Math.max(1, st.allN) < 0.7) foot.push('⚠ 未估算的任务超过 30%，上面的比例还不可信');
   foot.push('<b>小时数</b> = 目标百分比 × 净可安排 ' + fmt(wh) + 'h/周（' +
-    fmt(state.dayH) + 'h/天 − 机动 ' + fmt(state.bufH) + 'h = ' +
-    fmt(state.dayH - state.bufH) + 'h/天 × ' + fmt(state.daysW) + ' 天）');
+    fmt(state.dayH) + 'h/天 × ' + fmt(state.daysW) + ' 天 = ' +
+    fmt(state.dayH * state.daysW) + 'h，减每周机动 ' + fmt(weekBufferH()) + 'h）');
   document.getElementById('diag-foot').innerHTML = foot.join('<br>');
 }
 
@@ -836,7 +927,10 @@ function renderDash() {
   // 标出数据新鲜度: 一眼看出页面数据是刚拉的, 还是停留很久了(没有自动同步)
   const stamp = document.getElementById('dash-stamp');
   if (stamp) stamp.textContent = '· 数据更新于 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
-  const done = state.tasks.filter(t => t.finished && ymdMs(t.completed_date) !== null);
+  // 临时(突发)任务不进仪表盘: 这里衡量的是"计划内工作"的完成情况与投入结构,
+  // 把突发琐事混进来会系统性拉低平均耗时(它们多半当天完成), 也会让投入占比失真
+  const planTasks = state.tasks.filter(t => !t.temp);
+  const done = planTasks.filter(t => t.finished && ymdMs(t.completed_date) !== null);
   if (!done.length) {
     box.innerHTML = '<div class="dash-empty">还没有已完成的任务 —— 完成任务后这里会显示平均耗时、每周产出与估时偏差</div>';
     return;
@@ -899,7 +993,7 @@ function renderDash() {
   }
 
   // 4. 估时偏差系数: 就是设计文档 §2.8 要的那个数
-  const pairs = state.tasks.filter(t => num(t.estimate_h) && num(t.actual_h));
+  const pairs = planTasks.filter(t => num(t.estimate_h) && num(t.actual_h));
   let card4;
   if (!pairs.length) {
     card4 = dashCard('估时偏差', '—', '',
@@ -933,7 +1027,7 @@ function renderDash() {
   //    两者口径不同 —— 混在一起会得出错误结论, 所以拆开算、分别标注
   const actBy = {}, planBy = {};
   let actAll = 0, planAll = 0;
-  state.tasks.forEach(t => {
+  planTasks.forEach(t => {
     const c = t.category || '其他';
     if (num(t.actual_h)) { actBy[c] = (actBy[c] || 0) + num(t.actual_h); actAll += num(t.actual_h); }
     if (num(t.estimate_h)) { planBy[c] = (planBy[c] || 0) + num(t.estimate_h); planAll += num(t.estimate_h); }
@@ -970,8 +1064,8 @@ function renderDash() {
         '<div class="dir-diff">' + dTxt + '</div></div>';
     }).join('') + '</div>' +
       '<div class="mini" style="margin-top:8px">实际：' + fmt(actAll) + 'h / ' +
-      state.tasks.filter(t => num(t.actual_h)).length + ' 个任务（actual_h）· 计划：' + fmt(planAll) +
-      'h / ' + state.tasks.filter(t => num(t.estimate_h)).length +
+      planTasks.filter(t => num(t.actual_h)).length + ' 个任务（actual_h）· 计划：' + fmt(planAll) +
+      'h / ' + planTasks.filter(t => num(t.estimate_h)).length +
       ' 个任务（estimate_h）· 两者口径不同，故分别标注</div>';
   }
   const distCard = '<div class="dash-trend"><div class="mini">各类任务的时间投入占比' +
@@ -1126,7 +1220,9 @@ function render() {
   renderUnclassified();
   renderWeekPool();   // 改估时后待安排区的"还差 Xh"要跟着变, 否则得刷新页面才更新
   renderWeekFoot();   // 同理: 改象限后 wk-foot 里的 A/B/C/D 小时拆分要跟着变
-  const total = state.tasks.length;
+  // total 也要排除临时任务, 否则与 pool 的口径对不上
+  // ("共 N 个" 含临时任务、"未完成 M 个" 不含, 两个数字互相矛盾)
+  const total = state.tasks.filter(t => !t.temp).length;
   const pool = pending();
   const unc = pool.filter(t => !t.quadrant).length;
   // 措辞要准确: 已完成的任务仍出现在象限矩阵里(带"已做完"样式与后评估入口),
@@ -1260,6 +1356,15 @@ function saveHours() {
 /* ---------------- 每周时间安排 ---------------- */
 const WK = { start: 0, end: 0, brkStart: 0, brkEnd: 0, workStart: 0, workEnd: 0, names: [], row: 34 };
 
+/* 半小时的块在时间轴上只有 17px, 不好点也不好读, 所以给个最小高度 */
+const MIN_SLOT_H = 20;
+/* 低于这个高度就走紧凑布局(.wk-slot.sm): 只留名称, 不放"临时"角标与时间段 */
+const SNUG_H = 30;
+
+/* 临时(突发)任务的配色 —— 与象限色不冲突。
+   临时任务多半没有象限, 不加这套颜色就会和"未归类"的灰完全一样 */
+const TEMP = { color: '#c9a961', bg: '#fdf9f0' };
+
 /* 该小时是否落在午休时段内 */
 function inBreak(h) { return h >= WK.brkStart && h < WK.brkEnd; }
 
@@ -1296,15 +1401,19 @@ function slotHtml(s, idx) {
   const t = byNo(s.no);
   if (!t) return '';
   const q = QUAD[t.quadrant];
-  const color = q ? q.color : '#8893a7';
-  const bg = q ? q.bg : '#f0f2f5';
+  // 临时任务多半没有象限, 给它琥珀色, 与"未归类"的灰区分开
+  const color = q ? q.color : (t.temp ? TEMP.color : '#8893a7');
+  const bg = q ? q.bg : (t.temp ? TEMP.bg : '#f0f2f5');
   const top = (s.from - WK.start) * WK.row;
-  const h = Math.max(20, (s.to - s.from) * WK.row - 3);
-  return '<div class="wk-slot' + (t.finished ? ' done' : '') +
+  const h = Math.max(MIN_SLOT_H, (s.to - s.from) * WK.row - 3);
+  const snug = h < SNUG_H;      // 半小时的块: 收掉上下留白并缩小角标, 见 .wk-slot.sm
+  return '<div class="wk-slot' + (t.finished ? ' done' : '') + (t.temp ? ' temp' : '') +
+    (snug ? ' sm' : '') +
     '" style="top:' + top + 'px;height:' + h + 'px;border-left:3px solid ' + color + ';background:' + bg + '"' +
     ' title="' + esc(t.name) + ' · ' + hm(s.from) + '–' + hm(s.to) + '" onclick="openSlot(' + idx + ')">' +
     '<span class="ws-x" onclick="event.stopPropagation();delSlot(' + idx + ')">✕</span>' +
-    '<span class="ws-name">' + esc(t.name) + '</span>' +
+    '<span class="ws-name">' + (t.temp ? '<span class="ws-tmp">临时</span>' : '') +
+    esc(t.name) + '</span>' +
     (h > 40 ? '<span class="ws-time">' + hm(s.from) + '–' + hm(s.to) + '</span>' : '') +
     '</div>';
 }
@@ -1376,8 +1485,11 @@ function renderWeekFoot() {
   const total = slots.reduce((a, s) => a + (s.to - s.from), 0);
   const budget = weekHours();
   const byQ = {};
+  // 临时任务没有象限, 混进 byQ[''] 会让下面"未归类"的小时数虚高 —— 单独计
+  let tempH = 0;
   slots.forEach(s => {
     const t = byNo(s.no);
+    if (t && t.temp) { tempH += (s.to - s.from); return; }
     const q = (t && t.quadrant) || '';
     byQ[q] = (byQ[q] || 0) + (s.to - s.from);
   });
@@ -1391,6 +1503,16 @@ function renderWeekFoot() {
   if (parts.length) html += '<br>' + parts.join(' · ');
   const noQuad = byQ[''] ? byQ[''] : 0;
   if (noQuad) html += '<br><span style="color:#8890a0">其中 ' + fmt(noQuad) + 'h 属于未归类的任务</span>';
+  // 机动额度对照 —— "机动时间被什么吃掉了"最直接的答案(§1.3 机动预留 / §8)。
+  // 额度和消耗都按**周**比, 不按天: 突发不可能每天恰好 1h, 按天比会把"那天事多"误判成超支
+  const bufH = weekBufferH();
+  const over = tempH - bufH;
+  html += '<br><span style="color:#a8801f">机动：已用 <b>' + fmt(tempH) + 'h</b> / 额度 ' +
+    fmt(bufH) + 'h' +
+    (over > 0.001
+      ? ' <b style="color:#d6453d">⚠ 超支 ' + fmt(over) + 'h（侵占了象限额度）</b>'
+      : '<span style="color:#2e9e5b"> 剩 ' + fmt(bufH - tempH) + 'h</span>') +
+    '</span> <a class="wk-edit" onclick="openWeekBuffer()">调整额度</a>';
   document.getElementById('wk-foot').innerHTML = html;
 }
 
@@ -1526,16 +1648,17 @@ function clearWeek() {
   }, '清空本周');
 }
 
-/* 把 8.5 .. 22.5 的半小时刻度填进下拉框(init 里先调用, 否则弹窗是空的) */
+/* 把 8.5 .. 22.5 的半小时刻度填进下拉框(init 里先调用, 否则弹窗是空的)。
+   时段编辑(m-slot)与临时任务(m-temp)共用这套刻度 */
 function fillHourOptions() {
-  const fromEl = document.getElementById('sl-from');
-  const toEl = document.getElementById('sl-to');
   const parts = [];
   for (let h = WK.start; h <= WK.end; h += 0.5) {
     parts.push('<option value="' + h + '">' + hm(h) + '</option>');
   }
-  fromEl.innerHTML = parts.join('');
-  toEl.innerHTML = parts.join('');
+  ['sl-from', 'sl-to', 'tmp-from', 'tmp-to'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = parts.join('');
+  });
 }
 
 function openSlot(idx) {
@@ -1565,11 +1688,114 @@ function saveSlot() {
     i === idx ? { no: x.no, day: x.day, from: f, to: t } : x), '已更新时段');
 }
 
+/* ---------------- 临时(突发)任务 ---------------- */
+/* 它只做**时间记录**: 占掉哪个时段、花了多久, 用来回答"机动时间被什么吃掉了"。
+   所以走独立入口, 不进待办池(不参与象限诊断), 也不进仪表盘 —— 见 §1.3 机动预留。 */
+
+function openTempTask() {
+  const ws = parseYmd(state.plan.week_start || thisWeekStart());
+  const now = new Date();
+  // 默认今天; 今天不在当前查看的这一周时(翻到了历史周/下一周), 退回该周周一
+  const inWeek = now >= ws && now < new Date(ws.getTime() + 7 * 86400000);
+  const d = inWeek ? now : ws;
+
+  const di = document.getElementById('tmp-date');
+  // <input type="date"> 只认 YYYY-MM-DD, 而数据统一存 YYYY/MM/DD。
+  // min/max 锁在当前查看的这一周 —— 记到别的周会表现为"记完就不见了"
+  di.min = fmtYmd(ws).split('/').join('-');
+  di.max = fmtYmd(new Date(ws.getTime() + 6 * 86400000)).split('/').join('-');
+  di.value = fmtYmd(d).split('/').join('-');
+  document.getElementById('tmp-name').value = '';
+
+  // 默认时段: 今天就从"当前整点"起 1h, 否则 9:00–10:00。
+  // 突发多半是刚发生的事, 默认当下比默认上班时间少改两次
+  let h0 = WK.workStart;
+  if (inWeek && d.toDateString() === now.toDateString()) {
+    const cur = Math.floor(now.getHours()) + (now.getMinutes() >= 30 ? 0.5 : 0);
+    if (cur >= WK.start && cur <= WK.end - 1) h0 = cur;
+  }
+  if (inBreak(h0)) h0 = WK.brkEnd;            // 落到午休时段就挪到午休之后
+  document.getElementById('tmp-from').value = h0;
+  document.getElementById('tmp-to').value = h0 + 1;
+
+  document.getElementById('tmp-hint').innerHTML =
+    '会作为一条<b>临时任务</b>记进 ' + state.plan.week_start + ' 那一周的时间表。<br>' +
+    '它不进待办、不参与象限统计 —— 突发占用会在周表下方单独列出。';
+  openModal('m-temp');
+}
+
+function saveTempTask() {
+  const name = document.getElementById('tmp-name').value.trim();
+  if (!name) { toast('请填写这件事是什么', 'err'); return; }
+  const date = document.getElementById('tmp-date').value.split('-').join('/');
+  const from = parseFloat(document.getElementById('tmp-from').value);
+  const to = parseFloat(document.getElementById('tmp-to').value);
+  if (!(to > from)) { toast('结束时间要晚于开始时间', 'err'); return; }
+
+  post('/api/add_temp_task', { name: name, date: date, from: from, to: to }).then(d => {
+    if (!d.ok) { toast(d.error || '记录失败', 'err'); return; }
+    closeModal('m-temp');
+    toast('已记下「' + name + '」' + fmt(d.hours) + 'h', 'ok');
+    // 服务端一次写了两处(任务 + 时段), 本地这两份状态都得跟上 ——
+    // 只更新 slots 的话, 时段块会因为 byNo() 找不到这条新任务而整块不渲染
+    if (d.task && !byNo(d.no)) state.tasks.push(d.task);
+    if (state.plan.week_start === d.week_start) {
+      state.plan.slots = d.slots;
+      renderWeek();
+      render();                 // 副标题的"共 N 个任务"也要跟着更新
+    } else {
+      loadWeekPlan(d.week_start);   // 记到了别的周 → 直接翻过去看
+    }
+  }).catch(() => toast('连接服务器失败，请确认已启动 serve_task_flow.py', 'err'));
+}
+
+/* ---------------- 本周机动额度 ---------------- */
+/* 额度按周落盘, 而不是像"每天几小时 / 一周几天"那样只放在内存里 ——
+   **调整这个动作本身就是信号**: 如果连着几周都在往上调, 说明 5h 这个基线定低了,
+   或者突发已经常态化。不落盘的话, 这个证据每周刷新页面就没了。 */
+
+function openWeekBuffer() {
+  document.getElementById('buf-sub').textContent =
+    state.plan.week_start + ' 那一周 · 已排 ' + state.plan.slots.length + ' 个时段';
+  document.getElementById('buf-h').value = weekBufferH();
+  document.getElementById('buf-hint').innerHTML =
+    '默认 ' + fmt(BUDGET.week_buffer_h) + 'h。它只影响"净可安排"的换算（从周预算里扣掉），' +
+    '不参与象限占比的分母。<br>' +
+    '改回默认值等于没调过、不留痕 —— 所以"连着几周都往上调"这件事本身就能一眼看出来。';
+  openModal('m-buf');
+}
+
+/* hours 不传 = 从弹窗输入框读; 传了 = 预算栏直接改(见 init 里的 change 绑定) */
+function saveWeekBuffer(hours) {
+  const week = state.plan.week_start;
+  const h = (hours === undefined)
+    ? parseFloat(document.getElementById('buf-h').value)
+    : hours;
+  if (isNaN(h) || h < 0) { toast('额度要填 0 或正数', 'err'); return; }
+  post('/api/week_buffer', { week_start: week, hours: h }).then(d => {
+    if (!d.ok) { toast(d.error || '保存失败', 'err'); return; }
+    closeModal('m-buf');          // 弹窗没开时调用也无害
+    // 等待期间可能翻了周: 只有还停在同一周时才改本地状态,
+    // 否则会把额度落到一个已经脱离的 plan 对象上
+    if (state.plan.week_start === week) {
+      state.plan.buffer_h = d.buffer_h;
+      renderDiag();
+      renderWeekFoot();
+    }
+    toast('本周机动额度：' + fmt(d.buffer_h) + 'h', 'ok');
+  }).catch(() => toast('连接服务器失败，请确认已启动 serve_task_flow.py', 'err'));
+}
+
+function resetWeekBuffer() {
+  saveWeekBuffer(BUDGET.week_buffer_h);
+}
+
 /* week 为空 = 本周(由服务端规范化); 传入具体周一则查看那一周 */
 function loadWeekPlan(week) {
   const q = week ? '?week=' + encodeURIComponent(week) : '';
   fetch('/api/week_plan' + q).then(r => r.json()).then(d => {
-    if (d && d.slots) { state.plan = d; renderWeek(); }
+    // renderDiag 也要跟着: 机动额度是周属性, 预算栏与"净可安排"得随周变
+    if (d && d.slots) { state.plan = d; renderWeek(); renderDiag(); }
   }).catch(() => {
     // 不能静默失败: 直接双击打开 html 文件时 fetch 必失败, 表现为"点了没反应"
     toast('读取周计划失败 —— 请确认页面是通过本地服务器打开的', 'err');
@@ -1908,23 +2134,29 @@ function loadData() {
 
 function init() {
   state.tasks = TASKS;
-  const bd = document.getElementById('b-day'), bb = document.getElementById('b-buf'), bw = document.getElementById('b-days');
-  bd.value = state.dayH; bb.value = state.bufH; bw.value = state.daysW;
-  [bd, bb, bw].forEach(el => el.addEventListener('change', () => {
-    state.dayH = parseFloat(bd.value) || 0;
-    state.bufH = parseFloat(bb.value) || 0;
-    state.daysW = parseFloat(bw.value) || 1;
-    renderDiag();      // 预算只影响小时换算, 不落盘
-    renderWeekFoot();  // wk-foot 里的"净可安排 Xh"也要跟着变
-  }));
-  document.querySelectorAll('.modal-bg').forEach(bg => {
-    bg.addEventListener('click', e => { if (e.target === bg) bg.classList.add('hide'); });
-  });
+  // state.plan 要**先**赋值: 机动额度挂在它上面, 预算栏与周表都依赖它
   state.plan = {
     week_start: (WEEK_PLAN && WEEK_PLAN.week_start) || '',
     slots: (WEEK_PLAN && WEEK_PLAN.slots) || [],
-    review: (WEEK_PLAN && WEEK_PLAN.review) || null
+    review: (WEEK_PLAN && WEEK_PLAN.review) || null,
+    buffer_h: (WEEK_PLAN && typeof WEEK_PLAN.buffer_h === 'number')
+      ? WEEK_PLAN.buffer_h : BUDGET.week_buffer_h
   };
+  const bd = document.getElementById('b-day'), bw = document.getElementById('b-days');
+  const bb = document.getElementById('b-wbuf');
+  bd.value = state.dayH; bw.value = state.daysW; bb.value = weekBufferH();
+  // "每天几小时 / 一周几天"是长期参数, 只影响换算、不落盘
+  [bd, bw].forEach(el => el.addEventListener('change', () => {
+    state.dayH = parseFloat(bd.value) || 0;
+    state.daysW = parseFloat(bw.value) || 1;
+    renderDiag();
+    renderWeekFoot();  // wk-foot 里的"净可安排 Xh"也要跟着变
+  }));
+  // 机动额度不同: 它是**周属性**, 改了要落盘(理由见 saveWeekBuffer 上方注释)
+  bb.addEventListener('change', () => saveWeekBuffer(parseFloat(bb.value)));
+  document.querySelectorAll('.modal-bg').forEach(bg => {
+    bg.addEventListener('click', e => { if (e.target === bg) bg.classList.add('hide'); });
+  });
   WK.start = WEEK_META.start;
   WK.end = WEEK_META.end;
   WK.brkStart = WEEK_META.brkStart;
@@ -1965,9 +2197,10 @@ def build_html(tasks):
 
     budget = {
         "day_hours": DAY_HOURS,
-        "day_buffer_h": DAY_BUFFER_H,
-        "day_plan_h": DAY_PLAN_H,
         "days_per_week": PLAN_DAYS_PER_WEEK,
+        # 机动按**周**给(不是每天): 突发事件不可能每天恰好 1h, 日配额是拿刚性尺子量弹性的事
+        "week_buffer_h": WEEK_BUFFER_H,
+        "week_gross_h": WEEK_GROSS_H,
         "week_plan_h": WEEK_PLAN_H,
     }
     week_meta = {

@@ -127,14 +127,21 @@ def is_quadrant(key):
 
 
 # ---------------------------------------------------------------------------
-# 每日时间预算 (docs/design/time-quadrant-design.md §1.3)
+# 时间预算 (docs/design/time-quadrant-design.md §1.3)
 # ---------------------------------------------------------------------------
-# 机动时间在分母之外: 把它算进分母等于预先给"未知"分配了确定的时间
-DAY_HOURS = 8            # 每天毛可用时间
-DAY_BUFFER_H = 1         # 每天机动预留(应对突发, 不参与象限分配)
-DAY_PLAN_H = DAY_HOURS - DAY_BUFFER_H          # 每天净可安排 = 7
-PLAN_DAYS_PER_WEEK = 5   # 每周安排天数(默认工作日)
-WEEK_PLAN_H = DAY_PLAN_H * PLAN_DAYS_PER_WEEK  # 每周净可安排 = 35
+# 机动时间在分母之外: 把它算进分母等于预先给"未知"分配了确定的时间。
+#
+# 机动**按周预留, 不按天**: 突发事件不可能每天恰好 1h —— 拿"每天 1h"这种刚性配额
+# 去量弹性的事, 周三出一次 3h 的事故就会显示"超支 2h", 而真相只是那天事多。
+# 改成每周一个池子后总量不变(1h × 5 天 = 5h), 但允许跨天挪用。
+#
+# 额度的实际采用值按周存在 week_plan.json 的 buffers 里(可逐周调整, 默认取 WEEK_BUFFER_H)。
+DAY_HOURS = 8                                    # 每天毛可用时间
+PLAN_DAYS_PER_WEEK = 5                           # 每周安排天数(默认工作日)
+WEEK_GROSS_H = DAY_HOURS * PLAN_DAYS_PER_WEEK    # 每周毛可用 = 40
+WEEK_BUFFER_H = 5                                # 每周机动预留(应对突发, 不参与象限分配)
+WEEK_PLAN_H = WEEK_GROSS_H - WEEK_BUFFER_H       # 每周净可安排 = 35
+DAY_PLAN_H = WEEK_PLAN_H / PLAN_DAYS_PER_WEEK    # 平均每天净可安排 = 7(仅供展示换算)
 
 
 # ---------------------------------------------------------------------------

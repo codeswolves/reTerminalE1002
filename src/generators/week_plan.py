@@ -23,6 +23,9 @@ week_plan.py
           "done_n": 3,        # 写自评时: 本周已完成的任务数
           "done_h": 17.5      # 写自评时: 这些任务的净投入合计
         }
+      },
+      "buffers": {
+        "2026/09/21": 8       # 该周的机动额度(小时); 只存偏离默认值(WEEK_BUFFER_H)的周
       }
     }
 
@@ -32,7 +35,10 @@ week_plan.py
     - 到新的一周自动切到空白的新周, 不需要手动清空; 旧周数据保留, 可翻回查看
     - 文件缺失或损坏时按空计划处理, 不抛异常(否则会打挂整个接口)
     - 兼容早期单周格式 {"week_start", "slots"}, 读到后自动升级
-    - **weeks 与 reviews 必须一起读写**: 只写其中一个会静默抹掉另一个
+    - **weeks / reviews / buffers 必须一起读写**: 三者同一个文件, 只写其中一个会静默抹掉其它两个
+    - 时段可以指向**临时(突发)任务**(task_flows.json 里 temp: true): 它只做时间记录,
+      不进待办池也不参与象限统计, 其占用由页面在周表底部单独列出
+    - 机动额度**按周**存(buffers), 不按天: 突发不可能每天恰好 1h(见 meta.WEEK_BUFFER_H)
 
 设计文档: docs/design/time-quadrant-design.md §9.6 (与日排程 slots 结构对齐)
 """
@@ -43,6 +49,10 @@ import os
 import re
 import threading
 from datetime import date, timedelta
+
+# 机动额度的默认值来自 meta(单一来源约定)。与 meta.py 同目录,
+# 调用方(服务端 / 生成器)都已把 generators 加进 sys.path。
+from meta import WEEK_BUFFER_H
 
 # weeks 与 reviews 同存一个文件, 而服务端是多线程(每请求一线程),
 # 两个端点各自"读整个文件 → 改自己的字段 → 整文件写回"。
@@ -178,11 +188,11 @@ def _clean_review(raw):
 
 
 def _read_raw():
-    """读取整个文件, 返回 {"weeks": {...}, "reviews": {...}}。
+    """读取整个文件, 返回 {"weeks": {...}, "reviews": {...}, "buffers": {...}}。
 
-    两个字段必须一起读 —— 它们共用同一个文件, 分开写会互相覆盖(见 _write_raw)。
+    三个字段必须一起读 —— 它们共用同一个文件, 分开写会互相覆盖(见 _write_raw)。
     """
-    empty = {"weeks": {}, "reviews": {}}
+    empty = {"weeks": {}, "reviews": {}, "buffers": {}}
     if not os.path.exists(WEEK_PLAN_JSON):
         return empty
     try:
@@ -207,21 +217,30 @@ def _read_raw():
         reviews = {k: v for k, v in reviews.items() if v}
     else:
         reviews = {}
-    return {"weeks": weeks, "reviews": reviews}
+
+    # 机动额度: 只存"偏离默认值"的周, 读进来也只保留合法数字
+    buffers = raw.get("buffers")
+    if isinstance(buffers, dict):
+        buffers = {str(k): _num(v) for k, v in buffers.items()}
+        buffers = {k: v for k, v in buffers.items() if v is not None}
+    else:
+        buffers = {}
+    return {"weeks": weeks, "reviews": reviews, "buffers": buffers}
 
 
 def _write_raw(data):
     """写回整个文件。
 
-    **必须把 reviews 一并写回** —— 排期与自评在同一个文件里, 只写 weeks
-    会在用户保存时间安排时把自评静默抹掉。
+    **必须把 reviews 与 buffers 一并写回** —— 排期 / 自评 / 机动额度在同一个文件里,
+    只写其中一个会在用户改其它两项时把它们静默抹掉。
     """
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(WEEK_PLAN_JSON, "w", encoding="utf-8") as f:
         # allow_nan=False: 宁可抛异常, 也不要写出 NaN 这种非法 JSON ——
         # 那会让前端 JSON.parse 失败, 表现为"读取周计划失败", 排查半天找不到原因
         json.dump({"weeks": data.get("weeks") or {},
-                   "reviews": data.get("reviews") or {}}, f,
+                   "reviews": data.get("reviews") or {},
+                   "buffers": data.get("buffers") or {}}, f,
                   ensure_ascii=False, indent=2, allow_nan=False)
 
 
@@ -236,19 +255,22 @@ def read_reviews():
 
 
 def read_week_plan(week_start=None):
-    """读取指定周的计划 + 自评(默认本周)。
+    """读取指定周的计划 + 自评 + 机动额度(默认本周)。
 
     按周存储 —— 到了新的一周自动显示空白的新周, **不需要手动清空**;
-    旧周的安排与自评仍留在文件里, 用页面上的"← 上一周"可以翻回去看。
+    旧周的安排、自评与机动额度仍留在文件里, 用页面上的"← 上一周"可以翻回去看。
+
+    buffer_h 是该周的机动额度: 没单独设过就回落到默认值(WEEK_BUFFER_H)。
     """
     week = norm_week(week_start)
     data = _read_raw()
     return {"week_start": week, "slots": data["weeks"].get(week, []),
-            "review": data["reviews"].get(week)}
+            "review": data["reviews"].get(week),
+            "buffer_h": data["buffers"].get(week, WEEK_BUFFER_H)}
 
 
 def write_week_plan(week_start=None, slots=None):
-    """只写入指定周的排期(默认本周), 不动其它周的排期与自评。"""
+    """只写入指定周的排期(默认本周), 不动其它周的排期、自评与机动额度。"""
     week = norm_week(week_start)
     # 加锁: 读-改-写必须整体串行, 否则与 write_week_review 并发时互相覆盖
     with _FILE_LOCK:
@@ -256,7 +278,8 @@ def write_week_plan(week_start=None, slots=None):
         data["weeks"][week] = clean_slots(slots)
         _write_raw(data)
         return {"week_start": week, "slots": data["weeks"][week],
-                "review": data["reviews"].get(week)}
+                "review": data["reviews"].get(week),
+                "buffer_h": data["buffers"].get(week, WEEK_BUFFER_H)}
 
 
 def write_week_review(week_start=None, text="", stamp="", snap=None):
@@ -285,3 +308,37 @@ def write_week_review(week_start=None, text="", stamp="", snap=None):
             data["reviews"].pop(week, None)   # 正文为空 = 删除该周自评
         _write_raw(data)
         return {"week_start": week, "review": data["reviews"].get(week)}
+
+
+def read_week_buffer(week_start=None):
+    """指定周的机动额度(小时); 未单独设置过则回落到默认值。"""
+    week = norm_week(week_start)
+    return _read_raw()["buffers"].get(week, WEEK_BUFFER_H)
+
+
+def write_week_buffer(week_start=None, hours=None):
+    """设置指定周的机动额度。返回 (结果, 错误信息)。
+
+    hours 传 None / 空串(或恰好等于默认值)表示**恢复默认**, 会删掉该周的自定义值 ——
+    只存"偏离默认值"的周, 文件里才不会堆一排无意义的 5.0。
+
+    额度为什么要落盘、而不是像页面上另外几个预算参数那样纯前端(不落盘):
+    **调整这个动作本身就是信号**。如果连着几周都在往上调, 说明 5h 这个基线定低了
+    (或者突发已经常态化)。只放在内存里的话, 这个证据每周刷新页面就没了。
+    """
+    week = norm_week(week_start)
+    raw = str(hours).strip() if hours is not None else ""
+    h = None
+    if raw != "":
+        h = _num(hours)
+        if h is None:
+            return None, "机动额度要填 0 或正数"
+    with _FILE_LOCK:
+        data = _read_raw()
+        if h is None or abs(h - WEEK_BUFFER_H) < 0.001:
+            data["buffers"].pop(week, None)      # 等于默认值 = 不留痕迹
+        else:
+            data["buffers"][week] = h
+        _write_raw(data)
+        return {"week_start": week,
+                "buffer_h": data["buffers"].get(week, WEEK_BUFFER_H)}, ""

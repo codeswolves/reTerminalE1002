@@ -41,7 +41,14 @@ from meta import (  # noqa: E402
     DELIVERABLE_META,
     is_quadrant,
 )
-from week_plan import read_week_plan, write_week_plan, write_week_review  # noqa: E402
+from week_plan import (  # noqa: E402
+    clean_slots,
+    read_week_plan,
+    week_start_of,
+    write_week_buffer,
+    write_week_plan,
+    write_week_review,
+)
 from generate_project import (  # noqa: E402
     build_projects,
     add_project as proj_add,
@@ -301,6 +308,98 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
             write_tasks_raw(tasks)
 
             self._send_json({"ok": True, "no": new_no})
+
+        elif path == "/api/add_temp_task":
+            """记一笔临时(突发)任务: 建任务 + 排进周表时段, 一次写完。
+
+            为什么要放在服务端一次完成, 而不是让前端先 add_task 再存周计划:
+            两步之间存在"任务建了但时段没排上"的窗口 —— 而时段块要靠 no 回任务里
+            取名称(slotHtml 找不到任务就整块不渲染), 留下一笔看不见的脏数据。
+            两份文件各有各的锁, 这里也做不到一个事务, 所以第二步失败时明确回报
+            "任务已建、时段没排上", 而不是笼统说失败。
+            """
+            data = self._read_body()
+            name = str(data.get("name") or "").strip()
+            if not name:
+                self._send_json({"ok": False, "error": "请填写这件事是什么"})
+                return
+
+            sel = str(data.get("date") or "").strip() or date.today().strftime("%Y/%m/%d")
+            sel_d = parse_date(sel)
+            if not sel_d:
+                self._send_json({"ok": False, "error": f"日期格式不对: {sel}"})
+                return
+
+            # 先自己判"结束晚于开始", 再交给 clean_slots 做夹取与半小时对齐。
+            # 不能只靠 clean_slots: 它会把 20:00→05:00 这种倒置区间静默"修正"成
+            # 20:00→20:30, 用户看到的是保存成功却排在了别的时间。
+            try:
+                h_from = float(data.get("from"))
+                h_to = float(data.get("to"))
+            except (TypeError, ValueError):
+                self._send_json({"ok": False, "error": "时间不合法"})
+                return
+            if h_to <= h_from:
+                self._send_json({"ok": False, "error": "结束时间要晚于开始时间"})
+                return
+
+            week = week_start_of(sel_d)
+            span = clean_slots([{"no": "0", "day": 1, "from": h_from, "to": h_to}])
+            if not span:
+                self._send_json({"ok": False, "error": "时间不合法"})
+                return
+            slot = span[0]
+
+            tasks = read_tasks_raw()
+            max_no = 0
+            for t in tasks:
+                try:
+                    n = int(str(t.get("no", "0")))
+                    if n > max_no:
+                        max_no = n
+                except (ValueError, TypeError):
+                    pass
+            new_no = str(max_no + 1)
+            today_str = date.today().strftime("%Y/%m/%d")
+
+            new_task = {
+                "no": new_no,
+                "name": name,
+                "date": today_str,
+                "priority": DEFAULT_PRIORITY,
+                "category": str(data.get("category") or DEFAULT_CATEGORY).strip(),
+                # 标记: 只做时间记录, 不进待办池(不参与象限诊断与完成类统计)
+                "temp": True,
+                # 估时 = 这段时长本身。"花了/要花 N 小时"就是它的全部工作量语义
+                "estimate_h": round(float(slot["to"]) - float(slot["from"]), 2),
+                "nodes": [{"phase": "临时", "date": sel, "progress": 0,
+                           "note": str(data.get("note") or "").strip(), "owner": ""}],
+            }
+            tasks.append(new_task)
+            write_tasks_raw(tasks)
+
+            try:
+                plan = read_week_plan(sel)
+                saved = write_week_plan(plan["week_start"], plan["slots"] + [{
+                    "no": new_no,
+                    "day": (sel_d - parse_date(week)).days + 1,
+                    "from": slot["from"],
+                    "to": slot["to"],
+                }])
+            except (OSError, ValueError) as exc:
+                self._send_json({"ok": False, "no": new_no,
+                                 "error": f"任务已创建（No.{new_no}），"
+                                          f"但写入时间表失败：{exc}"})
+                return
+
+            created = next((t for t in read_tasks()
+                            if str(t.get("no")) == new_no), None)
+            self._send_json({
+                "ok": True, "no": new_no, "task": created,
+                "week_start": saved["week_start"], "slots": saved["slots"],
+                "review": saved.get("review"),
+                "hours": round(float(slot["to"]) - float(slot["from"]), 2),
+            })
 
         elif path == "/api/edit_task":
             data = self._read_body()
@@ -589,6 +688,17 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
             )
             self._send_json({"ok": True, "week_start": res["week_start"],
                              "review": res["review"]})
+
+        elif path == "/api/week_buffer":
+            # 每周机动额度: 同样存 week_plan.json, 单独端点 ——
+            # 改额度不该触碰 slots 与 review(同 week_review 的理由)
+            data = self._read_body()
+            res, err = write_week_buffer(data.get("week_start"), data.get("hours"))
+            if err:
+                self._send_json({"ok": False, "error": err})
+            else:
+                self._send_json({"ok": True, "week_start": res["week_start"],
+                                 "buffer_h": res["buffer_h"]})
 
         elif path == "/api/week_plan":
             data = self._read_body()

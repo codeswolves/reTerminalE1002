@@ -653,6 +653,12 @@ INDEX_HTML_TPL = """<!DOCTYPE html>
 <title>项目管理 · 项目索引</title>
 <style>
 __COMMON_CSS__
+/* 顶部跳转按钮。项目页在 output/project/ 下, 而任务页在站点根(静态根就是 output/tasks),
+   两者不同目录 —— 相对路径在 /project/xxx.html 下会被解析成 /project/quadrant.html 而 404,
+   所以这里用绝对路径(本地与博客的平铺部署都在站点根, 两边都成立) */
+.navbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.navbtn{font-size:13px;font-weight:600;color:#3b6fb0;background:#e8eef8;border:1px solid #c8d8ee;border-radius:8px;padding:5px 12px;text-decoration:none;transition:all .15s;white-space:nowrap}
+.navbtn:hover{background:#3b6fb0;color:#fff;border-color:#3b6fb0}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
 .pcard{display:block;text-align:left;background:#fff;border:1px solid #e3e8f0;border-radius:14px;padding:18px 20px 36px;cursor:pointer;transition:all .18s;position:relative;overflow:hidden}
 .pcard:hover{border-color:#3b6fb0;box-shadow:0 4px 14px rgba(59,111,176,.12);transform:translateY(-2px)}
@@ -720,6 +726,11 @@ __COMMON_CSS__
 </head>
 <body>
 <div class="wrap">
+  <div class="navbar">
+    <a class="navbtn" href="/tasks_view.html">← 任务清单</a>
+    <a class="navbtn" href="/task_flow.html">流程跟踪</a>
+    <a class="navbtn" href="/quadrant.html">四象限</a>
+  </div>
   <div class="hdr">
     <div>
       <h1>项目管理</h1>

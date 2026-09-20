@@ -283,6 +283,7 @@ def build_html(tasks):
       </div>
       <button class="add-task-btn" onclick="openAddTask()">＋ 添加任务</button>
       <a class="proj-link" href="quadrant.html" title="打开时间四象限页">🧭 四象限</a>
+      <a class="proj-link" href="task_flow.html" title="打开任务流程跟踪树">🌳 流程跟踪</a>
       <a class="proj-link" href="project_index.html" title="打开项目索引页">📁 项目管理</a>
     </div>
     <div class="stats">

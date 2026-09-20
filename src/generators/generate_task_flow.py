@@ -218,6 +218,12 @@ def read_tasks():
         if deliverable not in DELIVERABLE_META:
             deliverable = ""
 
+        # 临时(突发)任务标记: 由四象限页的"记一笔临时任务"入口创建, 只做**时间记录**
+        # (占用了哪个时段、花了多久), 不是待办。所以页面上把它排除在待办池之外 ——
+        # 否则临时琐事会堆满"待归类", 并把突发工时算进象限结构。
+        # 设计依据: 机动时间本就在象限分配的分母之外(§1.3), 它的消耗要单独看(§8)。
+        temp = bool(item.get("temp"))
+
         # ---- 时间管理四象限相关字段(全部可选, 缺失即保持缺失) ----
         quadrant = str(item.get("quadrant") or "").strip().upper()
         if quadrant not in QUADRANT_META:
@@ -267,6 +273,8 @@ def read_tasks():
             "q_hint": suggest_quadrant(priority, delayed, days_left),
             # 预期成果类型; 空 = 事务性任务(无产出), 是合法状态而非缺数据
             "deliverable": deliverable,
+            # 临时(突发)任务: 只记时间, 不进待办池
+            "temp": temp,
             "max_gap": max_gap,
             "max_gap_from": max_gap_from,
             "max_gap_to": max_gap_to,
@@ -475,7 +483,9 @@ body{{background:#f5f6f8;font-family:-apple-system,"Segoe UI","PingFang SC","Mic
 <div class="wrap">
   <div class="hdr">
     <div>
-      <a class="back-link" href="https://www.jevylee.com/tasks_view.html">← 返回任务清单</a>
+      <!-- 相对路径: 本地服务器与博客平铺部署(任务页都在站点根)两种情况下都成立。
+           写死公网域名会让本地打开时莫名跳到线上 —— 见设计文档 §7.1 -->
+      <a class="back-link" href="tasks_view.html">← 返回任务清单</a>
       <h1>🌳 任务流程跟踪树</h1>
       <div class="sub" id="sub"></div>
     </div>

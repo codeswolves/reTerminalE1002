@@ -10,7 +10,9 @@ week_plan.py
     {
       "weeks": {
         "2026/09/14": [                                  # 该周周一
-          {"no": "37", "day": 1, "from": 9, "to": 11}    # day: 1=周一 .. 7=周日
+          {"no": "37", "day": 1, "from": 9, "to": 11},   # day: 1=周一 .. 7=周日
+          {"no": "37", "day": 3, "from": 14, "to": 15,   # 同一任务可占多个时段
+           "done_h": 0.5}                                # done_h: 该时段记过的投入(可选)
         ],
         "2026/09/21": []
       },
@@ -31,7 +33,7 @@ week_plan.py
 
 约定:
     - 一个任务可以在一周内出现多次(多个时段)
-    - from / to 是小时(24 进制), 只允许落在 [DAY_START, DAY_END]
+    - from / to 是小时(24 进制), 只允许落在 [DAY_START, DAY_END], 并对齐到 GRID_MIN(10 分钟) 网格
     - 到新的一周自动切到空白的新周, 不需要手动清空; 旧周数据保留, 可翻回查看
     - 文件缺失或损坏时按空计划处理, 不抛异常(否则会打挂整个接口)
     - 兼容早期单周格式 {"week_start", "slots"}, 读到后自动升级
@@ -39,6 +41,9 @@ week_plan.py
     - 时段可以指向**临时(突发)任务**(task_flows.json 里 temp: true): 它只做时间记录,
       不进待办池也不参与象限统计, 其占用由页面在周表底部单独列出
     - 机动额度**按周**存(buffers), 不按天: 突发不可能每天恰好 1h(见 meta.WEEK_BUFFER_H)
+    - 时段可带 done_h(可选): 通过**这个时段**记进任务 actual_h 的投入。删时段时按它回退 ——
+      没有它, 那笔投入就成了无主的(任务上还在, 却无从知道该退多少)。
+      只有在周表里记的投入才算; 在任务清单页直接填的 actual_h 不经过时段, 删时段不影响它
 
 设计文档: docs/design/time-quadrant-design.md §9.6 (与日排程 slots 结构对齐)
 """
@@ -79,6 +84,15 @@ BREAK_END = 13.5     # 13:30
 WORK_START = 9.0
 WORK_END = 18.0
 
+# 时间网格: 10 分钟。
+# 原先是半小时对齐, 但它让"10 分钟的临时会议"根本录不进来 —— 而临时突发恰恰最需要
+# 按真实时长记录(它的全部用途就是还原"时间被什么吃掉了"), 记成 30 分钟就失真了。
+# 定 10 分钟而不是 1 分钟是刻意的: 再细就会出现 9:07 这种没人真会去填的值, 反而增加误操作。
+GRID_MIN = 10                       # 时间网格(分钟)
+MIN_SLOT_HOURS = GRID_MIN / 60.0    # 单个时段的最小长度(小时)
+# 注意: 页面 JS 里也有个 MIN_SLOT_H, 那是时段的**最小像素高度**(20px, 为了好点中),
+# 与这里的最小**时长**是两回事 —— 名字里带单位就是为了别搞混
+
 DAY_NAMES = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 
 
@@ -104,13 +118,22 @@ def empty_plan(week_start=None):
     return {"week_start": week_start or week_start_of(), "slots": [], "review": None}
 
 
-def snap_half(h):
-    """把小时对齐到 0.5(半小时), 避免出现 9.3 这种无法在时间表上对齐的值。"""
-    return round(h * 2) / 2
+def snap_grid(h):
+    """把小时对齐到时间网格(10 分钟)。
+
+    对齐不是为了"限制精度", 而是抹掉浮点噪声: 10 分钟 = 1/6 小时, 在二进制里没有精确表示,
+    不对齐的话文件里会出现 9.166666666666666, 页面显示分钟数时也可能在 59/00 之间抖动。
+    """
+    steps = 60.0 / GRID_MIN
+    return round(h * steps) / steps
 
 
 def clean_slots(raw):
-    """清洗 slots: 丢弃非法项, 对齐到半小时, 并把时间范围夹到工作时间窗内。"""
+    """清洗 slots: 丢弃非法项, 对齐到时间网格, 并把时间范围夹到工作时间窗内。
+
+    注意这里是**兜底**清洗(含旧数据的浮点噪声)。用户输入是否落在网格上,
+    由接口层显式校验并**明确拒绝** —— 静默挪到最近的网格会表现为"保存成功却排在别的时间"。
+    """
     out = []
     if not isinstance(raw, list):
         return out
@@ -128,9 +151,16 @@ def clean_slots(raw):
             continue
         if not 1 <= day <= 7:
             continue
-        h_from = snap_half(max(DAY_START, min(DAY_END - 0.5, h_from)))
-        h_to = snap_half(max(h_from + 0.5, min(DAY_END, h_to)))
-        out.append({"no": no, "day": day, "from": h_from, "to": h_to})
+        h_from = snap_grid(max(DAY_START, min(DAY_END - MIN_SLOT_HOURS, h_from)))
+        h_to = snap_grid(max(h_from + MIN_SLOT_HOURS, min(DAY_END, h_to)))
+        item = {"no": no, "day": day, "from": h_from, "to": h_to}
+        # done_h: 通过**这个时段**记进任务 actual_h 的投入, 删除时段时据此回退。
+        # 没有它, 删掉时段后那笔投入就成了无主的(任务上还在, 但无从知道该退多少)。
+        # 非正数不写 —— 没记过投入就不该在文件里留个 0
+        done_h = _num(s.get("done_h"))
+        if done_h:
+            item["done_h"] = done_h
+        out.append(item)
     return out
 
 

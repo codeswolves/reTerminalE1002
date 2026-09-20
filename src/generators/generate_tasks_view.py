@@ -716,12 +716,12 @@ if (document.readyState === 'loading') {{
     </div>
     <div class="two">
       <div>
-        <label>预估工时 (小时)</label>
+        <label>预计总投入工时 (小时)</label>
         <input type="number" id="task-estimate" min="0" step="0.5" placeholder="如 4">
       </div>
       <div>
-        <label>实际净投入 (小时)</label>
-        <input type="number" id="task-actual" min="0" step="0.5" placeholder="完成后回填">
+        <label>累计实际投入 (小时)</label>
+        <input type="number" id="task-actual" min="0" step="0.5" placeholder="可边做边更新">
       </div>
     </div>
     <label>备注</label>

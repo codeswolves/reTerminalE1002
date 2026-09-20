@@ -9,6 +9,7 @@ serve_task_flow.py
 
 import argparse
 import json
+import math
 import os
 import sys
 from datetime import date
@@ -42,6 +43,7 @@ from meta import (  # noqa: E402
     is_quadrant,
 )
 from week_plan import (  # noqa: E402
+    GRID_MIN,
     clean_slots,
     read_week_plan,
     week_start_of,
@@ -61,6 +63,39 @@ from generate_project import (  # noqa: E402
     link_node as pnode_link,
     unlink_node as pnode_unlink,
 )
+
+
+def undo_actual(entries):
+    """把 entries 里各任务的 actual_h 扣掉指定小时数, 一次读写完成。
+
+    用于"时段被删掉 → 通过该时段记进任务的投入一并回退"。
+
+    为什么放在服务端: 同 log_actual —— 前端"先读当前值再写回"在多个页面同时操作时
+    会丢数据(后写的用自己读到的旧值盖掉先写的)。
+
+    夹到 >= 0: 要回退的量超过已记的投入, 说明数据已经不一致(手改过 actual_h、
+    或同一时段被删了两次)。写负数只会让问题更难查, 夹到 0 并把结果回报给前端。
+    """
+    if not isinstance(entries, list) or not entries:
+        return []
+    tasks = read_tasks_raw()
+    out = []
+    for it in entries:
+        if not isinstance(it, dict):
+            continue
+        no = str(it.get("no") or "").strip()
+        back_h = _to_hours(it.get("hours"))
+        if not no or back_h is None or back_h <= 0:
+            continue
+        for t in tasks:
+            if str(t.get("no", "")) == no:
+                cur = _to_hours(t.get("actual_h")) or 0
+                t["actual_h"] = max(0, round((cur - back_h) * 60) / 60)
+                out.append({"no": no, "actual_h": t["actual_h"]})
+                break
+    if out:
+        write_tasks_raw(tasks)
+    return out
 
 
 class TaskFlowHandler(SimpleHTTPRequestHandler):
@@ -339,8 +374,21 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
             except (TypeError, ValueError):
                 self._send_json({"ok": False, "error": "时间不合法"})
                 return
+            if not (math.isfinite(h_from) and math.isfinite(h_to)):
+                self._send_json({"ok": False, "error": "时间不合法"})
+                return
             if h_to <= h_from:
                 self._send_json({"ok": False, "error": "结束时间要晚于开始时间"})
+                return
+            # 只接受落在 10 分钟网格上的时间。这里宁愿明确拒绝, 也不交给 clean_slots 静默
+            # 挪到最近的网格 —— 后者表现为"提示保存成功、却排在别的时间", 用户会以为是自己记错了
+            for label, val in (("开始", h_from), ("结束", h_to)):
+                if round(val * 60) % GRID_MIN:
+                    self._send_json({"ok": False,
+                                     "error": f"{label}时间要以 {GRID_MIN} 分钟为单位"})
+                    return
+            if h_to - h_from < GRID_MIN / 60.0 - 1e-9:
+                self._send_json({"ok": False, "error": f"时长至少 {GRID_MIN} 分钟"})
                 return
 
             week = week_start_of(sel_d)
@@ -648,6 +696,42 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
             self._send_json({"ok": True, "actual_h": hours} if ok
                             else {"ok": False, "error": err})
 
+        elif path == "/api/log_actual":
+            """把一次实际投入**累加**到 actual_h。
+
+            与 set_actual(覆盖)分开, 是因为语义不同: "这次做了 2 小时" 是增量事件。
+            累加必须放在服务端 —— 前端"先读当前值再写回"在多页面同时记录时会丢数据
+            (后写的用自己读到的旧值覆盖掉先写的)。
+            """
+            data = self._read_body()
+            task_no = str(data.get("no", "")).strip()
+            if not task_no:
+                self._send_json({"ok": False, "error": "缺少任务编号"})
+                return
+            add_h = _to_hours(data.get("hours"))
+            if add_h is None or add_h <= 0:
+                self._send_json({"ok": False, "error": "实际投入要填正数"})
+                return
+
+            tasks = read_tasks_raw()
+            target = None
+            for item in tasks:
+                if str(item.get("no", "")) == task_no:
+                    target = item
+                    break
+            if target is None:
+                self._send_json({"ok": False, "error": f"任务 No.{task_no} 不存在"})
+                return
+
+            # 累加后归一到整分钟: 否则 20 分钟会写成 0.3333333333333333
+            total = (_to_hours(target.get("actual_h")) or 0) + add_h
+            target["actual_h"] = round(total * 60) / 60
+            write_tasks_raw(tasks)
+
+            created = next((t for t in read_tasks()
+                            if str(t.get("no")) == task_no), None)
+            self._send_json({"ok": True, "task": created})
+
         elif path == "/api/set_blockers":
             data = self._read_body()
             task_no = str(data.get("no", "")).strip()
@@ -703,12 +787,19 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
         elif path == "/api/week_plan":
             data = self._read_body()
             plan = write_week_plan(data.get("week_start"), data.get("slots"))
+            # undo: 被移出的时段上记过的实际投入, 一并从任务的 actual_h 里回退。
+            # 放在这个端点而不是另开一个, 是为了让"移出时段 + 回退投入"一次完成 ——
+            # 拆成两次请求的话, 中途失败会留下"时段没了、投入还在", 正是这次要修的问题。
+            # 顺序先写 slots 再回退: 反过来的话, 写 slots 一旦失败, 用户重试会**重复扣减**;
+            # 而先写导致的失败是明面上的(时段已移出、投入未回退, 可去任务清单手动改)
+            undone = undo_actual(data.get("undo"))
             # 把清洗后的 slots 与 review 一并带回: 前端据此更新本地状态,
             # 少带一个就会让它在下次重绘时"忘掉"这件事(自评曾因此从界面上消失)
             self._send_json({"ok": True, "count": len(plan["slots"]),
                              "week_start": plan["week_start"],
                              "slots": plan["slots"],
-                             "review": plan["review"]})
+                             "review": plan["review"],
+                             "undone": undone})
 
         else:
             self.send_error(404)

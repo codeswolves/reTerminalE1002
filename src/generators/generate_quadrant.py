@@ -68,6 +68,7 @@ from week_plan import (  # noqa: E402
     DAY_END,
     DAY_NAMES,
     DAY_START,
+    GRID_MIN,
     WORK_END,
     WORK_START,
     read_week_plan,
@@ -361,12 +362,18 @@ TEMPLATE = r"""<!DOCTYPE html>
 
   .wk-pool-head { display: flex; align-items: center; gap: 8px; margin: 15px 0 8px; }
   .wk-pool { display: flex; flex-wrap: wrap; gap: 8px; }
+  /* 待安排区的补充说明: 现在只用来解释「已排够」是什么意思(它们不再被移出池子) */
+  #wk-pool-hint { margin-top: 10px; line-height: 1.75; }
+  #wk-pool-hint b { color: #5a6577; }
   .wk-chip {
     border: 1px solid #d8dee9; background: #fff; border-radius: 9px; padding: 6px 10px;
     font-size: 12px; cursor: grab; display: flex; align-items: center; gap: 6px; max-width: 100%;
   }
   .wk-chip:hover { border-color: #3b6fb0; }
   .wk-chip.dragging { opacity: .45; }
+  /* 本周已排够(按估时算): 淡一点, 与"还缺时间"的区分开。
+     它仍然可以拖 —— 估时只是估计, 排满了不代表不用再排 */
+  .wk-chip.enough { opacity: .6; }
   .wk-chip .wq { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 6px; flex: none; }
   .wk-chip .wn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .wk-chip .wh {
@@ -382,7 +389,7 @@ TEMPLATE = r"""<!DOCTYPE html>
   .modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
   .modal .sub { font-size: 12px; color: #8893a7; margin-bottom: 14px; }
   .modal label { display: block; font-size: 12px; color: #5a6577; margin: 12px 0 5px; }
-  .modal input[type=text], .modal input[type=number], .modal input[type=date], .modal select, .modal textarea {
+  .modal input[type=text], .modal input[type=number], .modal input[type=date], .modal input[type=time], .modal select, .modal textarea {
     width: 100%; padding: 8px 10px; border: 1px solid #d8dee9; border-radius: 8px;
     font-size: 13px; font-family: inherit; box-sizing: border-box;
   }
@@ -392,6 +399,13 @@ TEMPLATE = r"""<!DOCTYPE html>
   .modal-actions button { padding: 7px 18px; border-radius: 8px; font-size: 13px; cursor: pointer; border: 1px solid #d8dee9; background: #fff; color: #3a4456; }
   .modal-actions .btn-primary { background: #3b6fb0; color: #fff; border-color: #3b6fb0; }
   .modal-actions .btn-primary:hover { background: #2d5a94; }
+  /* 工时弹窗里的 ✅: 用 margin-right:auto 推到最左, 与右边"取消/保存"分开 ——
+     它是终态动作(而且会遇到确认框), 挨着保存键容易被误点。
+     绿色是为了和蓝色主按钮区分开: 那个是"存下改动", 这个是"这件事做完了" */
+  .modal-actions .btn-done {
+    margin-right: auto; color: #2e9e5b; border-color: #a8d8bd; background: #f3fbf6;
+  }
+  .modal-actions .btn-done:hover { background: #2e9e5b; color: #fff; border-color: #2e9e5b; }
 
   /* 后评估 */
   .facts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 14px; font-size: 12px; color: #5a6577; }
@@ -506,6 +520,7 @@ TEMPLATE = r"""<!DOCTYPE html>
       <span class="mini" id="wk-pool-cnt"></span>
     </div>
     <div class="wk-pool" id="wk-pool"></div>
+    <div class="mini" id="wk-pool-hint"></div>
   </div>
 
   <div class="panel">
@@ -584,11 +599,13 @@ TEMPLATE = r"""<!DOCTYPE html>
   <div class="modal" style="width:400px">
     <h3 id="est-title">填写工时</h3>
     <div class="sub" id="est-sub"></div>
-    <label>预估剩余工时（小时，净专注时间，不含等待）</label>
+    <label>预计总共要投入多少工时（小时，净专注时间，不含等待）</label>
     <input type="number" id="est-h" min="0" step="0.5" placeholder="留空表示未估算">
-    <label>实际净投入（小时，任务完成后填）</label>
-    <input type="number" id="act-h" min="0" step="0.5" placeholder="留空表示未填写">
+    <label>累计实际投入（小时，可边做边更新）</label>
+    <input type="number" id="act-h" min="0" step="0.5" placeholder="留空表示未记录">
     <div class="modal-actions">
+      <button class="btn-done" id="est-done" onclick="saveHoursThenDone()"
+              title="保存工时并标记为已完成">✅ 完成</button>
       <button onclick="closeModal('m-est')">取消</button>
       <button class="btn-primary" onclick="saveHours()">保存</button>
     </div>
@@ -645,9 +662,12 @@ TEMPLATE = r"""<!DOCTYPE html>
     <h3 id="sl-title">调整时段</h3>
     <div class="sub" id="sl-sub"></div>
     <label>开始时间</label>
-    <select id="sl-from"></select>
+    <input type="time" id="sl-from" step="600">
     <label>结束时间</label>
-    <select id="sl-to"></select>
+    <input type="time" id="sl-to" step="600">
+    <label>这次实际做了多少（分钟）</label>
+    <input type="number" id="sl-done" min="0" step="5" placeholder="留空 = 只改时间">
+    <div class="mini" id="sl-remain"></div>
     <div class="modal-actions">
       <button onclick="closeModal('m-slot')">取消</button>
       <button class="btn-primary" onclick="saveSlot()">保存</button>
@@ -667,11 +687,11 @@ TEMPLATE = r"""<!DOCTYPE html>
     <div class="two">
       <div>
         <label>开始</label>
-        <select id="tmp-from"></select>
+        <input type="time" id="tmp-from" step="600">
       </div>
       <div>
         <label>结束</label>
-        <select id="tmp-to"></select>
+        <input type="time" id="tmp-to" step="600">
       </div>
     </div>
     <div class="mini" id="tmp-hint"></div>
@@ -694,6 +714,22 @@ TEMPLATE = r"""<!DOCTYPE html>
       <button onclick="closeModal('m-buf')">取消</button>
       <button onclick="resetWeekBuffer()">恢复默认</button>
       <button class="btn-primary" onclick="saveWeekBuffer()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 完成任务（顺带记一笔实际投入） -->
+<div class="modal-bg hide" id="m-done">
+  <div class="modal" style="width:400px">
+    <h3>任务完成</h3>
+    <div class="sub" id="dn-sub"></div>
+    <label>实际投入了多少工时（小时）</label>
+    <input type="number" id="dn-actual" min="0" step="0.5" placeholder="留空 = 不记录">
+    <div class="mini" id="dn-hint"></div>
+    <div class="modal-actions">
+      <button onclick="closeModal('m-done')">取消</button>
+      <button onclick="saveDone(false)">只标记完成</button>
+      <button class="btn-primary" onclick="saveDone(true)">完成并记录</button>
     </div>
   </div>
 </div>
@@ -737,6 +773,7 @@ let state = {
 };
 let editingSlot = -1;
 let editing = null;   // 当前弹窗对应的任务编号
+let doneTarget = null;   // 完成任务弹窗对应的任务编号
 let dragNo = null;
 
 function esc(s) {
@@ -751,6 +788,13 @@ function num(v) {
 function fmt(v) {
   if (v === null || v === undefined) return '—';
   return (Math.round(v * 10) / 10).toString();
+}
+/* 时长显示: 不足 1 小时就说分钟。
+   10 分钟 = 0.1667h, 按"小时 + 1 位小数"会显示成 0.2h(其实是 12 分钟) ——
+   而临时突发恰恰常是几十分钟的量级, 这个舍入会让"我明明记了 10 分钟"对不上账 */
+function fmtDur(h) {
+  const m = Math.round(h * 60);
+  return m < 60 ? m + ' 分钟' : fmt(h) + 'h';
 }
 function byNo(no) { return state.tasks.find(t => String(t.no) === String(no)); }
 
@@ -993,7 +1037,10 @@ function renderDash() {
   }
 
   // 4. 估时偏差系数: 就是设计文档 §2.8 要的那个数
-  const pairs = planTasks.filter(t => num(t.estimate_h) && num(t.actual_h));
+  // 只统计**已完成**的任务。actual_h 现在可以边做边累加, 而进行中的比值还在变 ——
+  // 没做完就计入, 会让"实际 ÷ 预估"偏低, 看起来像"习惯性高估", 方向正好相反。
+  // (中途超预估的信号由待安排区的"超预估"标红负责, 不混进这个系数里)
+  const pairs = planTasks.filter(t => t.finished && num(t.estimate_h) && num(t.actual_h));
   let card4;
   if (!pairs.length) {
     card4 = dashCard('估时偏差', '—', '',
@@ -1249,20 +1296,60 @@ function post(url, payload) {
   });
 }
 
-/* 标记完成。完成日期由服务端写当天, 完成后重新拉取一次
-   (completed_date / total_days / finished 都是服务端算的, 不能只在本地改) */
-function doneTask(no) {
-  const t = byNo(no);
-  if (!t) return;
+/* 真正执行完成动作(不含确认与录入) */
+function postComplete(no) {
+  post('/api/complete_task', { no: String(no) }).then(d => {
+    if (!d.ok) { toast(d.error || '操作失败', 'err'); return; }
+    toast('No.' + no + ' 已完成', 'ok');
+    loadData();            // 重新拉取: 仪表盘要立刻反映这次完成
+  }).catch(() => toast('连接服务器失败，请确认已启动 serve_task_flow.py', 'err'));
+}
+
+/* 带确认的完成。actual 非 null 时先写实际投入再标记完成 ——
+   顺序不能反: 反了的话第二步失败就留下"完成了但没有实际投入"的状态, 而任务已经不在待安排里了 */
+function confirmComplete(no, t, actual) {
   confirmBox('把 <b>No.' + esc(no) + ' ' + esc(t.name) + '</b> 标记为已完成？<br><br>' +
     '完成后会从象限里移出，并立即计入仪表盘（平均耗时、本周完成、估时偏差）。',
     function () {
-      post('/api/complete_task', { no: String(no) }).then(d => {
-        if (!d.ok) { toast(d.error || '操作失败', 'err'); return; }
-        toast('No.' + no + ' 已完成', 'ok');
-        loadData();          // 重新拉取: 仪表盘要立刻反映这次完成
+      if (actual === null || actual === undefined) { postComplete(no); return; }
+      post('/api/set_actual', { no: String(no), actual_h: actual }).then(d => {
+        if (!d.ok) { toast(d.error || '记录实际投入失败', 'err'); return; }
+        postComplete(no);
       }).catch(() => toast('连接服务器失败，请确认已启动 serve_task_flow.py', 'err'));
     }, '完成任务');
+}
+
+/* 点 ✅ 的入口。
+   估过时但没记过实际投入 → 先弹录入框: 任务一完成就从待安排消失, 不在这里顺手问一句,
+   actual_h 大概率永远空着 —— 设计文档 §2.8.4 说的"完成时记一个数"就是这一步。
+   已经记过的直接走确认, 不打扰。 */
+function doneTask(no) {
+  const t = byNo(no);
+  if (!t) return;
+  if (num(t.estimate_h) && !num(t.actual_h)) {
+    doneTarget = String(no);
+    document.getElementById('dn-sub').textContent = 'No.' + no + ' ' + t.name;
+    document.getElementById('dn-actual').value = num(t.estimate_h) || '';
+    document.getElementById('dn-hint').innerHTML =
+      '预计投入 <b>' + fmtDur(num(t.estimate_h)) + '</b>（已预填，改一下就行）。<br>' +
+      '它用于<b>估时校准</b> —— 算出你习惯性低估多少倍。跳过也能完成，只是那个系数会少了这条数据。';
+    openModal('m-done');
+    return;
+  }
+  confirmComplete(no, t, null);
+}
+
+function saveDone(withActual) {
+  const no = doneTarget;
+  const t = no ? byNo(no) : null;
+  if (!t) { closeModal('m-done'); return; }
+  let actual = null;
+  if (withActual) {
+    actual = parseFloat(document.getElementById('dn-actual').value);
+    if (isNaN(actual) || actual < 0) { toast('实际投入要填 0 或正数', 'err'); return; }
+  }
+  closeModal('m-done');
+  confirmComplete(no, t, actual);
 }
 
 function setQuadrant(no, q) {
@@ -1309,6 +1396,37 @@ function adoptAllHints() {
   );
 }
 
+/* 工时弹窗里的 ✅ —— 比卡片上那个多一层意义:
+   这里是"边做边更新实际投入"的地方, 用户可能刚改完值就决定收工,
+   所以完成前先把当前填的值存下来, 否则那一改会随弹窗关闭一起丢掉。*/
+function saveHoursThenDone() {
+  const no = editing;
+  const t = byNo(no);
+  if (!t) return;
+  const est = num(document.getElementById('est-h').value);
+  const act = num(document.getElementById('act-h').value);
+  closeModal('m-est');
+
+  // 顺序必须串行(同 saveHours): 服务端每个端点都是"读整个 JSON → 改一个字段 → 整文件写回",
+  // 并行会互相覆盖。完成放最后 —— 任务一完成就从待安排移出, 前面任何一步失败都必须能停住
+  post('/api/set_estimate', { no: String(no), estimate_h: est }).then(r1 => {
+    if (!r1.ok) { toast(r1.error || '预估工时保存失败', 'err'); return false; }
+    return post('/api/set_actual', { no: String(no), actual_h: act });
+  }).then(r2 => {
+    if (r2 === false) return;
+    if (r2 && !r2.ok) {
+      toast('预估工时已保存，但实际投入未保存：' + (r2.error || '未知错误'), 'err');
+      loadData();
+      return;
+    }
+    t.estimate_h = est;
+    t.actual_h = act;
+    // 工时上面刚写过, 这里 actual 传 null 不重复写。确认框仍要弹 ——
+    // 完成会从象限移出并计入仪表盘, 不是个该静默发生的动作
+    confirmComplete(no, t, null);
+  }).catch(() => toast('连接服务器失败，请确认已启动 serve_task_flow.py', 'err'));
+}
+
 function openHours(no) {
   const t = byNo(no);
   if (!t) return;
@@ -1317,6 +1435,8 @@ function openHours(no) {
   document.getElementById('est-sub').textContent = t.name;
   document.getElementById('est-h').value = num(t.estimate_h) || '';
   document.getElementById('act-h').value = num(t.actual_h) || '';
+  // 已完成的就不再给 ✅ 了(重复完成没有意义), 但工时仍可查改
+  document.getElementById('est-done').style.display = t.finished ? 'none' : '';
   openModal('m-est');
 }
 
@@ -1354,7 +1474,7 @@ function saveHours() {
 }
 
 /* ---------------- 每周时间安排 ---------------- */
-const WK = { start: 0, end: 0, brkStart: 0, brkEnd: 0, workStart: 0, workEnd: 0, names: [], row: 34 };
+const WK = { start: 0, end: 0, brkStart: 0, brkEnd: 0, workStart: 0, workEnd: 0, names: [], row: 34, gridMin: 10 };
 
 /* 半小时的块在时间轴上只有 17px, 不好点也不好读, 所以给个最小高度 */
 const MIN_SLOT_H = 20;
@@ -1368,11 +1488,39 @@ const TEMP = { color: '#c9a961', bg: '#fdf9f0' };
 /* 该小时是否落在午休时段内 */
 function inBreak(h) { return h >= WK.brkStart && h < WK.brkEnd; }
 
-/* 浮点小时 -> "8:30" 这样的显示串 */
+/* 浮点小时 -> "8:30" 这样的显示串。
+   先把小时归一到整分钟再拆 —— 用小数部分直接算会出问题: 10 分钟 = 1/6 小时在二进制里
+   没有精确表示, 10.9999999 会被算成 mm=60, 显示成 "10:60" */
 function hm(h) {
-  const hh = Math.floor(h);
-  const mm = Math.round((h - hh) * 60);
-  return hh + ':' + (mm < 10 ? '0' : '') + mm;
+  const t = Math.round(h * 60);
+  return Math.floor(t / 60) + ':' + two(t % 60);
+}
+
+/* 浮点小时 <-> <input type="time"> 的 "HH:MM" */
+function hToTime(h) {
+  const t = Math.round(h * 60);
+  return two(Math.floor(t / 60)) + ':' + two(t % 60);
+}
+function timeToH(v) {
+  const m = String(v || '').match(/^(\d{1,2}):(\d{2})$/);
+  return m ? (+m[1] * 60 + +m[2]) / 60 : NaN;
+}
+/* 是否落在时间网格上(10 分钟的整数倍)。
+   不落网格时**提示并拒绝**, 不静默挪到最近的网格 —— 那会表现为"说保存成功、却排在别的时间" */
+function onGrid(h) {
+  return Math.abs(Math.round(h * 60) % WK.gridMin) < 1e-6;
+}
+/* 读并校验一对时间输入框。通过返回 {f, t}, 否则返回 {err} */
+function readTimeRange(fromId, toId) {
+  const f = timeToH(document.getElementById(fromId).value);
+  const t = timeToH(document.getElementById(toId).value);
+  if (isNaN(f) || isNaN(t)) return { err: '请填写开始与结束时间' };
+  if (!onGrid(f) || !onGrid(t)) return { err: '时间要以 ' + WK.gridMin + ' 分钟为单位' };
+  if (f < WK.start - 1e-6 || t > WK.end + 1e-6)
+    return { err: '时间要在 ' + hm(WK.start) + ' – ' + hm(WK.end) + ' 之间' };
+  if (t - f < WK.gridMin / 60 - 1e-6)
+    return { err: '结束时间至少要比开始晚 ' + WK.gridMin + ' 分钟' };
+  return { f: f, t: t };
 }
 
 /* 按**本地时区**构造日期。不能用 new Date("2026-09-14") —— 那会被当成 UTC 午夜解析,
@@ -1494,24 +1642,24 @@ function renderWeekFoot() {
     byQ[q] = (byQ[q] || 0) + (s.to - s.from);
   });
   const parts = QUAD_ORDER.filter(q => byQ[q])
-    .map(q => '<b style="color:' + QUAD[q].color + '">' + q + '</b> ' + fmt(byQ[q]) + 'h');
-  let html = '本周已安排 <b>' + fmt(total) + 'h</b>';
+    .map(q => '<b style="color:' + QUAD[q].color + '">' + q + '</b> ' + fmtDur(byQ[q]));
+  let html = '本周已安排 <b>' + fmtDur(total) + '</b>';
   if (budget > 0) {
-    html += ' / 净可安排 ' + fmt(budget) + 'h';
+    html += ' / 净可安排 ' + fmtDur(budget);
     if (total > budget) html += ' <span style="color:#d6453d">⚠ 已超出预算</span>';
   }
   if (parts.length) html += '<br>' + parts.join(' · ');
   const noQuad = byQ[''] ? byQ[''] : 0;
-  if (noQuad) html += '<br><span style="color:#8890a0">其中 ' + fmt(noQuad) + 'h 属于未归类的任务</span>';
+  if (noQuad) html += '<br><span style="color:#8890a0">其中 ' + fmtDur(noQuad) + ' 属于未归类的任务</span>';
   // 机动额度对照 —— "机动时间被什么吃掉了"最直接的答案(§1.3 机动预留 / §8)。
   // 额度和消耗都按**周**比, 不按天: 突发不可能每天恰好 1h, 按天比会把"那天事多"误判成超支
   const bufH = weekBufferH();
   const over = tempH - bufH;
-  html += '<br><span style="color:#a8801f">机动：已用 <b>' + fmt(tempH) + 'h</b> / 额度 ' +
-    fmt(bufH) + 'h' +
+  html += '<br><span style="color:#a8801f">机动：已用 <b>' + fmtDur(tempH) + '</b> / 额度 ' +
+    fmtDur(bufH) +
     (over > 0.001
-      ? ' <b style="color:#d6453d">⚠ 超支 ' + fmt(over) + 'h（侵占了象限额度）</b>'
-      : '<span style="color:#2e9e5b"> 剩 ' + fmt(bufH - tempH) + 'h</span>') +
+      ? ' <b style="color:#d6453d">⚠ 超支 ' + fmtDur(over) + '（侵占了象限额度）</b>'
+      : '<span style="color:#2e9e5b"> 剩 ' + fmtDur(bufH - tempH) + '</span>') +
     '</span> <a class="wk-edit" onclick="openWeekBuffer()">调整额度</a>';
   document.getElementById('wk-foot').innerHTML = html;
 }
@@ -1523,30 +1671,59 @@ function arrangedHours(no) {
     .reduce((a, s) => a + (s.to - s.from), 0);
 }
 
+/* 剩余工作量 = 预计总投入 − 累计实际投入。
+
+   **可能为负**(超预估) —— 调用方必须显式处理: 负数意味着"估时已经不够用了",
+   而不是"这件事没得做了"。直接当成"没有剩余"隐藏掉, 就又变回"任务凭空消失"。
+   未估算的任务按 1h 兜底(与旧行为一致)。 */
+function remainOf(t) {
+  return (num(t.estimate_h) || 1) - (num(t.actual_h) || 0);
+}
+
 function renderWeekPool() {
-  // 判据是"排满了没有", 而不是"有没有排过" ——
-  // 否则排不完的任务(例如 6h 只放得下 1h)会从待安排里消失, 剩下的工时再也排不了
-  const pool = pending().filter(t => {
-    const need = num(t.estimate_h) || 1;
-    return need - arrangedHours(t.no) > 0.001;
-  });
-  document.getElementById('wk-pool-cnt').textContent = '（' + pool.length + '）拖进格子即可安排';
+  // 判据是"任务做完了没有", 而不是"本周排满了没有" ——
+  // 估时只是估计: 按估时排满 ≠ 真的够了; 而同一件事一周分两次做(周中 2h + 周末 2h)更常见。
+  // 靠"排满就移出池子"来收拢列表, 上面两种情况都会变成"任务不见了", 而人不知道它去了哪,
+  // 下次拖不动只会以为坏了。
+  // 注意 arrangedHours() 只看**当前查看那一周**: 所以本周排满的任务, 翻到下一周仍是同一条。
+  const all = pending();
+  const gapOf = t => remainOf(t) - arrangedHours(t.no);
+  // "本周已排够"(按估时算)不再移出池子, 只标出来: 让人知道它不缺时间, 但想再排照样能拖
+  const full = all.filter(t => remainOf(t) > 0.001 && gapOf(t) <= 0.001);
+  document.getElementById('wk-pool-cnt').textContent = '（' + all.length + '）拖进格子即可安排';
+  const hint = document.getElementById('wk-pool-hint');
+  if (hint) {
+    hint.innerHTML = full.length
+      ? '标「已排够」的 <b>' + full.length + '</b> 个是按<b>估时</b>算满了 —— ' +
+        '估时不准时照样可以再排，拖进去会先按 1h 铺开'
+      : '';
+  }
   const box = document.getElementById('wk-pool');
-  if (!pool.length) {
-    box.innerHTML = '<span class="mini">所有未完成任务都已排满</span>';
+  if (!all.length) {
+    box.innerHTML = '<span class="mini">没有未完成的任务</span>';
     return;
   }
-  box.innerHTML = pool.map(t => {
+  box.innerHTML = all.map(t => {
     const q = QUAD[t.quadrant];
-    const need = num(t.estimate_h) || 1;
-    const done = arrangedHours(t.no);
-    const tag = done > 0.001
-      ? '还差 ' + fmt(need - done) + 'h'
-      : (num(t.estimate_h) ? fmt(need) + 'h' : '未估算');
-    return '<div class="wk-chip" draggable="true" data-no="' + esc(t.no) + '">' +
+    const left = remainOf(t);
+    // 剩余**为负**才是超预估。用 <= 0 判定会把"投入刚好等于预估"也算进来,
+    // 于是显示成"超 0h" —— 既像 bug(用户实测反馈过), 又把两件不同的事混成了一个说法
+    const over = left < -0.001;
+    // 投入已达预估(剩余 ≈ 0): 同样不需要再排时间, 但说法必须和"超出"分开
+    const met = !over && left <= 0.001 && !!num(t.estimate_h);
+    const gap = left - arrangedHours(t.no);
+    // 已排够 = 有估时、没超、也没做满, 且本周排的已经够剩余工作量了。它不是"没事做", 只是"不缺时间"
+    const enough = !over && !met && !!num(t.estimate_h) && gap <= 0.001;
+    const tag = !num(t.estimate_h) ? '未估算'
+      : (over ? '超 ' + fmt(-left) + 'h'
+              : (met ? '投入已满'
+                     : (enough ? '已排够' : '差 ' + fmt(gap) + 'h')));
+    // 超预估标红: 它是"估时偏了"最直接的信号, 不该看起来和正常任务一样
+    return '<div class="wk-chip' + (enough || met ? ' enough' : '') + '" draggable="true" data-no="' + esc(t.no) + '">' +
       (q ? '<span class="wq" style="color:' + q.color + ';background:' + q.bg + '">' + t.quadrant + '</span>' : '') +
       '<span class="wn">' + esc(t.name) + '</span>' +
-      '<span class="wh" title="点击修改预估工时" onclick="event.stopPropagation();openHours(\'' + esc(t.no) + '\')">' + tag + '</span>' +
+      '<span class="wh"' + (over ? ' style="color:#d6453d;border-bottom-color:#d6453d"' : '') +
+      ' title="点击修改工时" onclick="event.stopPropagation();openHours(\'' + esc(t.no) + '\')">' + tag + '</span>' +
       '</div>';
   }).join('');
   box.querySelectorAll('.wk-chip').forEach(c => {
@@ -1578,9 +1755,13 @@ function bindWeekDrop() {
    (例如 6h 从 10:30 开始 → 10:30-11:30 + 13:30-18:30), 而不是只排到第一个障碍就停。 */
 function addSlot(no, day, hour) {
   const t = byNo(no);
-  const total = num(t && t.estimate_h) || 1;
-  const need = Math.max(0, total - arrangedHours(no));   // 只接手"还没排够"的部分
-  if (need <= 0.001) { toast('这个任务的预估工时已经排满了', ''); return; }
+  // 变量名别用 left —— 下面铺开逻辑里那个 left 是"这次还剩多少没排", 含义不同, 重名会直接报错
+  const remain = remainOf(t);                            // 剩余工作量(可能为负 = 超预估)
+  // 这次铺开多少: 优先补上"还没排够"的缺口; 超预估或本周已排够时按 1h 铺开, 具体再手动调。
+  // **不再拦截"本周已排满"** —— 估时只是估计, 人比估时更清楚还要多久;
+  // 而"排满就不让拖"会让"同一件事一周分两次做"(周中 2h + 周末 2h)根本做不到
+  let need = remain > 0.001 ? Math.max(0, remain - arrangedHours(no)) : 0;
+  if (need <= 0.001) need = 1;
   const busy = state.plan.slots
     .filter(s => s.day === day)
     .map(s => [s.from, s.to]);
@@ -1619,20 +1800,45 @@ function addSlot(no, day, hour) {
   }
 }
 
+/* 把要移出的时段上记过的投入汇总成 [{no, hours}], 交给服务端一次性回退。
+   按 no 累加 —— 同一任务占了多个时段时要合并成一笔, 否则会反复读写同一份任务文件,
+   中间任何一次失败都更难收拾 */
+function undoOf(slots) {
+  const acc = {};
+  slots.forEach(s => {
+    const h = num(s.done_h) || 0;
+    if (h > 0) acc[s.no] = (acc[s.no] || 0) + h;
+  });
+  return Object.keys(acc).map(no => ({ no: no, hours: Math.round(acc[no] * 60) / 60 }));
+}
+
 function delSlot(idx) {
-  savePlan(state.plan.slots.filter((_, i) => i !== idx), '已移出时间表');
+  const s = state.plan.slots[idx];
+  if (!s) return;
+  const back = num(s.done_h) || 0;
+  // 直接扣, 不做二次确认 —— 但把回退写进提示: 数字变了得让人知道为什么变。
+  // 没记过投入的时段保持原提示, 不弹无关的话
+  savePlan(state.plan.slots.filter((_, i) => i !== idx),
+    back > 0 ? '已移出时间表，并回退 ' + fmtDur(back) + '实际投入' : '已移出时间表',
+    undoOf([s]));
 }
 
 /* 提交周计划。**先提交、成功后才改本地** ——
    反过来(先改本地再提交)一旦失败就会留下脏状态: 内存里已经改了, 服务端没改,
    而且之后任何一次 renderWeek() 都会拿这份脏数据重绘, UI 与服务端长期不一致。
    调用方传"新值", 由这里负责在成功后落到 state.plan。 */
-function savePlan(nextSlots, msg) {
+function savePlan(nextSlots, msg, undo) {
   const week = state.plan.week_start;
-  post('/api/week_plan', { week_start: week, slots: nextSlots }).then(d => {
+  post('/api/week_plan', { week_start: week, slots: nextSlots, undo: undo || [] }).then(d => {
     if (!d.ok) { toast(d.error || '保存失败', 'err'); return; }
     // 同 saveWeekReview: 回调里现取 state.plan, 避免等待期间翻周后写到已脱离的旧对象上
     if (state.plan.week_start !== week) { loadWeekPlan(week); return; }
+    // 服务端已把要回退的投入扣掉了(见 undo 参数), 本地任务池得跟上 ——
+    // 否则周表底部和弹窗里的"还差多少"仍按旧的 actual_h 算, 与文件里的值不一致
+    (d.undone || []).forEach(u => {
+      const t = byNo(u.no);
+      if (t) t.actual_h = u.actual_h;
+    });
     state.plan.slots = Array.isArray(d.slots) ? d.slots : nextSlots;  // 服务端清洗后的结果
     state.plan.review = d.review || null;   // 服务端一并带回(写排期不动自评)
     renderWeek();
@@ -1642,23 +1848,43 @@ function savePlan(nextSlots, msg) {
 
 function clearWeek() {
   if (!state.plan.slots.length) { toast('这一周还没有安排', ''); return; }
+  const undo = undoOf(state.plan.slots);
+  const back = undo.reduce((a, u) => a + u.hours, 0);
   confirmBox('清空 ' + state.plan.week_start + ' 那一周已安排的 ' + state.plan.slots.length +
-    ' 个时段？<br><br>任务本身不会被删除，只是从时间表上拿下来。', function () {
-    savePlan([], '已清空本周安排');
+    ' 个时段？<br><br>任务本身不会被删除，只是从时间表上拿下来。' +
+    // 整周一起清的影响面比删一个时段大得多, 这里必须提前说清回退多少 ——
+    // 删单个时段可以只在事后提示(toast), 整周清空不能
+    (back > 0 ? '<br><br>这些时段里通过周表记过的 <b>' + fmtDur(back) + '</b>实际投入会一并回退' +
+      '（在任务清单页直接填的投入不受影响）。' : ''), function () {
+    savePlan([], back > 0 ? '已清空本周安排，并回退 ' + fmtDur(back) + '实际投入' : '已清空本周安排', undo);
   }, '清空本周');
 }
 
-/* 把 8.5 .. 22.5 的半小时刻度填进下拉框(init 里先调用, 否则弹窗是空的)。
-   时段编辑(m-slot)与临时任务(m-temp)共用这套刻度 */
-function fillHourOptions() {
-  const parts = [];
-  for (let h = WK.start; h <= WK.end; h += 0.5) {
-    parts.push('<option value="' + h + '">' + hm(h) + '</option>');
+/* 时间输入改用 <input type="time"> 后, 这里原来那个"把半小时刻度填进下拉框"的
+   fillHourOptions() 就没有用了 —— 用户可以直接输入任意 10 分钟刻度的时刻 */
+
+/* 弹窗里的「原估 / 已投入 / 这次做了 / 还剩」实时预览。
+   放在弹窗里而不是让人去别的页面翻 —— "这次做了多少"得看着总数才能填准 */
+function renderSlotRemain() {
+  const el = document.getElementById('sl-remain');
+  if (!el) return;
+  const s = state.plan.slots[editingSlot];
+  const t = s ? byNo(s.no) : null;
+  if (!t) { el.innerHTML = ''; return; }
+  const total = num(t.estimate_h);
+  const used = num(t.actual_h) || 0;
+  const add = (parseFloat(document.getElementById('sl-done').value) || 0) / 60;
+  let html = '本任务：' + (total ? '预计总投入 ' + fmtDur(total) : '未估算');
+  if (used > 0) html += ' · 已投入 ' + fmtDur(used);
+  if (add > 0) html += ' · 这次 ' + fmtDur(add);
+  if (total) {
+    const left = total - used - add;
+    // 三种情况分开写: "还剩 0 分钟"和待安排区那个"超 0h"一样, 是个没意义的读数
+    html += ' → ' + (left < -0.001 ? '超 <b style="color:#d6453d">' + fmtDur(-left) + '</b>'
+      : left > 0.001 ? '还剩 <b>' + fmtDur(left) + '</b>'
+      : '<b style="color:#2e9e5b">刚好用完</b>');
   }
-  ['sl-from', 'sl-to', 'tmp-from', 'tmp-to'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = parts.join('');
-  });
+  el.innerHTML = html;
 }
 
 function openSlot(idx) {
@@ -1669,8 +1895,10 @@ function openSlot(idx) {
   document.getElementById('sl-title').textContent = t ? t.name : ('No.' + s.no);
   document.getElementById('sl-sub').textContent =
     WK.names[s.day - 1] + ' · 当前 ' + hm(s.from) + '–' + hm(s.to);
-  document.getElementById('sl-from').value = s.from;
-  document.getElementById('sl-to').value = s.to;
+  document.getElementById('sl-from').value = hToTime(s.from);
+  document.getElementById('sl-to').value = hToTime(s.to);
+  document.getElementById('sl-done').value = '';   // 每次打开都是"记一笔新的", 不保留上次输入
+  renderSlotRemain();
   openModal('m-slot');
 }
 
@@ -1678,14 +1906,36 @@ function saveSlot() {
   const idx = editingSlot;
   const s = state.plan.slots[idx];
   if (!s) return;
-  const f = Math.max(WK.start, Math.min(WK.end - 0.5,
-    parseFloat(document.getElementById('sl-from').value) || s.from));
-  const t = Math.max(f + 0.5, Math.min(WK.end,
-    parseFloat(document.getElementById('sl-to').value) || s.to));
+  const r = readTimeRange('sl-from', 'sl-to');
+  if (r.err) { toast(r.err, 'err'); return; }
+  const doneMin = parseFloat(document.getElementById('sl-done').value) || 0;
+  if (isNaN(doneMin) || doneMin < 0) { toast('实际投入要填 0 或正数', 'err'); return; }
   closeModal('m-slot');
-  // 不直接改 s: 交给 savePlan 在提交成功后统一落到 state.plan, 避免失败留下脏状态
-  savePlan(state.plan.slots.map((x, i) =>
-    i === idx ? { no: x.no, day: x.day, from: f, to: t } : x), '已更新时段');
+
+  // 不直接改 s: 交给 savePlan 在提交成功后统一落到 state.plan, 避免失败留下脏状态。
+  // done_h 必须跟着走 —— 它是"通过这个时段记了多少投入"的账本, 删时段时靠它回退。
+  // 重建对象时漏掉它, 之前在这个时段记的投入就永远退不回来了
+  const next = state.plan.slots.map((x, i) =>
+    i === idx ? { no: x.no, day: x.day, from: r.f, to: r.t,
+                  done_h: Math.round(((num(x.done_h) || 0) + doneMin / 60) * 60) / 60 } : x);
+  if (doneMin <= 0) { savePlan(next, '已更新时段'); return; }
+
+  // 顺序有讲究: 先记实际投入(服务端累加), 再存时段。
+  // savePlan 成功后要重绘周表, 而"还差 / 超预估"依赖新的 actual_h —— 反过来做会先用旧值画一遍
+  post('/api/log_actual', { no: s.no, hours: doneMin / 60 }).then(d => {
+    if (!d.ok) { toast(d.error || '记录实际投入失败', 'err'); return; }
+    const t = byNo(s.no);
+    if (t && d.task) { t.actual_h = d.task.actual_h; t.estimate_h = d.task.estimate_h; }
+    savePlan(next, '已记录实际投入 ' + fmtDur(doneMin / 60));
+    // 工作量正好填满、任务却还没标完成 → 顺口问一句。
+    // **不自动完成**: "投入 = 预估"不等于"做完了"(估 8h、做了 8h 却还差收尾很常见),
+    // 而完成会牵动仪表盘(平均耗时、本周完成数、估时偏差)—— 让数字自动触发这些后果, 比不做还危险
+    if (t && num(t.estimate_h) && remainOf(t) <= 0.001 && !t.finished) {
+      confirmBox('「' + esc(t.name) + '」的工作量已经填满：预计 ' +
+        fmtDur(num(t.estimate_h)) + '，累计投入 ' + fmtDur(num(t.actual_h)) + '。<br><br>' +
+        '要顺便标记为完成吗？', function () { postComplete(t.no); }, '工作量已填满');
+    }
+  }).catch(() => toast('连接服务器失败，请确认已启动 serve_task_flow.py', 'err'));
 }
 
 /* ---------------- 临时(突发)任务 ---------------- */
@@ -1707,16 +1957,17 @@ function openTempTask() {
   di.value = fmtYmd(d).split('/').join('-');
   document.getElementById('tmp-name').value = '';
 
-  // 默认时段: 今天就从"当前整点"起 1h, 否则 9:00–10:00。
+  // 默认时段: 今天就从"当前 10 分钟刻度"起 1h, 否则 9:00–10:00。
   // 突发多半是刚发生的事, 默认当下比默认上班时间少改两次
   let h0 = WK.workStart;
   if (inWeek && d.toDateString() === now.toDateString()) {
-    const cur = Math.floor(now.getHours()) + (now.getMinutes() >= 30 ? 0.5 : 0);
+    const cur = now.getHours() +
+      Math.floor(now.getMinutes() / WK.gridMin) * WK.gridMin / 60;
     if (cur >= WK.start && cur <= WK.end - 1) h0 = cur;
   }
   if (inBreak(h0)) h0 = WK.brkEnd;            // 落到午休时段就挪到午休之后
-  document.getElementById('tmp-from').value = h0;
-  document.getElementById('tmp-to').value = h0 + 1;
+  document.getElementById('tmp-from').value = hToTime(h0);
+  document.getElementById('tmp-to').value = hToTime(h0 + 1);
 
   document.getElementById('tmp-hint').innerHTML =
     '会作为一条<b>临时任务</b>记进 ' + state.plan.week_start + ' 那一周的时间表。<br>' +
@@ -1728,14 +1979,13 @@ function saveTempTask() {
   const name = document.getElementById('tmp-name').value.trim();
   if (!name) { toast('请填写这件事是什么', 'err'); return; }
   const date = document.getElementById('tmp-date').value.split('-').join('/');
-  const from = parseFloat(document.getElementById('tmp-from').value);
-  const to = parseFloat(document.getElementById('tmp-to').value);
-  if (!(to > from)) { toast('结束时间要晚于开始时间', 'err'); return; }
+  const r = readTimeRange('tmp-from', 'tmp-to');
+  if (r.err) { toast(r.err, 'err'); return; }
 
-  post('/api/add_temp_task', { name: name, date: date, from: from, to: to }).then(d => {
+  post('/api/add_temp_task', { name: name, date: date, from: r.f, to: r.t }).then(d => {
     if (!d.ok) { toast(d.error || '记录失败', 'err'); return; }
     closeModal('m-temp');
-    toast('已记下「' + name + '」' + fmt(d.hours) + 'h', 'ok');
+    toast('已记下「' + name + '」' + fmtDur(d.hours), 'ok');
     // 服务端一次写了两处(任务 + 时段), 本地这两份状态都得跟上 ——
     // 只更新 slots 的话, 时段块会因为 byNo() 找不到这条新任务而整块不渲染
     if (d.task && !byNo(d.no)) state.tasks.push(d.task);
@@ -2164,7 +2414,15 @@ function init() {
   WK.workStart = WEEK_META.workStart;
   WK.workEnd = WEEK_META.workEnd;
   WK.names = WEEK_META.names;
-  fillHourOptions();
+  WK.gridMin = WEEK_META.gridMin;
+  // 时间输入框的上下界取自 WK(不写死在 HTML 里, 免得两处不一致)
+  ['sl-from', 'sl-to', 'tmp-from', 'tmp-to'].forEach(id => {
+    const el = document.getElementById(id);
+    el.min = hToTime(WK.start);
+    el.max = hToTime(WK.end);
+  });
+  // 填"这次实际做了多少"时实时预览还剩多少
+  document.getElementById('sl-done').addEventListener('input', renderSlotRemain);
   render();
   renderWeek();
   // 不在这里 bindDrag(document): 各渲染函数自己负责绑(见 renderMatrix / renderUnclassified),
@@ -2211,6 +2469,8 @@ def build_html(tasks):
         "workStart": WORK_START,
         "workEnd": WORK_END,
         "names": DAY_NAMES,
+        # 时间网格(分钟): 输入的时间必须落在它的整数倍上, 见 GRID_MIN 的注释
+        "gridMin": GRID_MIN,
     }
     plan = read_week_plan()
 

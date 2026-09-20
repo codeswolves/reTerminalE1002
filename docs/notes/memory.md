@@ -128,9 +128,44 @@ git checkout <旧commit> -- data/ output/tasks/ output/project/
 git rm -r --cached -q data/ output/tasks/ output/project/
 ```
 
+
 > 陷阱的完整分析见 `docs/notes/git-multi-end-collaboration.md` 第六节。
 
-### ⑥ 仍在同步的隐私内容（已知并接受）
+### ⑥ 验证 data/ 有没有被改动，不能靠 `git diff`（2026-09-20 踩过）
+
+**不带两个 commit 的 `git diff` 比较的是「工作区 vs 暂存区」，而 `data/` 已不在索引里 —— 于是它永远输出为空，无论文件被改成什么样：**
+
+```bash
+git diff --stat data/          # 永远空。用它证明"数据没被改动"是无效的
+```
+
+> ⚠️ 别和上面 ④ 的 `git diff HEAD..github/master -- data/` 搞混：那个带了两个 commit，
+> 比的是**提交之间**的差异，用来判断"远端有没有删除提交"是**有效**的。失效的只是不带 commit 参数的写法。
+
+**要验证数据完整性，直接比内容**：
+
+```bash
+python -c "
+import hashlib
+for p in ['data/task_flows.json', 'data/week_plan.json']:
+    print(p, hashlib.md5(open(p, 'rb').read()).hexdigest())
+"
+```
+
+或者复制一份再逐字节比对（脚本里用 `.bak` 就是这个思路）。
+
+### ⑦ 跑「改真实数据再还原」的脚本，输出不要用管道截断
+
+`python script.py | Select-Object -First 16` 这类写法，PowerShell 会在收够行数后**中止管道**，
+把 python 进程一起杀掉 —— 脚本 `finally` 里的还原代码**根本不会执行**，真实数据就留在"改过"的状态。
+
+- 要看前几行就**重定向到文件再读**，或者让脚本自己只打印关键部分
+- 脚本收尾加一行"已还原 + 内容与备份一致"的校验，而不是无声结束
+
+**2026-09-20 实测**：就是因为这个，`data/` 里留下了测试任务 `No.46` 和它的时段；
+靠脚本开头的 `.bak` 备份才恢复回来 —— **备份机制是有效的，失效的是"判断有没有残留"的方法**。
+
+### ⑧ 仍在同步的隐私内容（已知并接受）
 
 - `output/dashboard/*.html` —— 含体重、健身、目标进度
 - `output/screenshots/*.png` —— 含任务页面截图与姓名

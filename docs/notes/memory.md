@@ -56,6 +56,31 @@ IDE 内嵌预览会屏蔽 `window.confirm()` —— 不弹框、直接返回 `fa
 
 **现状（2026-09-15）**：`project_index.html`、`project_tree.html`、`tasks_view.html` 三个页面均已改用自绘弹窗。`tasks_view.html` 是最晚修的一个 —— 它的「一键完成」「删除任务」此前用原生 `confirm()`，所以点了完全没反应，且所有 `alert()` 报错也都看不见。**新增页面时务必沿用同一套 `toast()` / `confirmBox()`。**
 
+## 弹窗底部冒出横向滚动条：两个原因叠在一起（2026-09-21 踩过）
+
+**现象**：`task_flow.html` 的后评估弹窗底部出现横向滚动条、右侧内容被切掉，一行三个控件（下拉 + 两个日期输入）全被撑开。
+
+**① 特异性相同，靠后的那条胜出。**
+
+```css
+.blk-row input { width: 86px; }                 /* 写在前面 */
+.modal input, .modal select { width: 100%; }    /* 写在后面, 特异性同为 0,1,1 → 它赢 */
+```
+
+三个控件于是各占 `100%`，一行必然溢出。**修法是提高特异性**（`.modal .blk-row input` → 0,2,1），不是调换顺序 —— 顺序会被以后往文件里加样式再次打乱。
+
+**② `overflow-y:auto` 会让 `overflow-x` 的计算值也变成 `auto`。**
+
+这是 CSS 规范：一个轴是 `visible`、另一个不是时，`visible` 会计算成 `auto`。所以哪怕只溢出几个像素（圆点定位在 `left:99%`、日期标签贴着右边界），整个弹窗也会冒出横向滚动条。**光调宽高是治不好的，得把溢出源去掉**（贴边的绝对定位元素所在容器加 `overflow:hidden`，日期标签从 `left:100%` 改成 `right:0`）。
+
+**排查手法**（比盯截图靠谱）：
+
+```js
+const el = document.querySelector('#review-modal-bg .modal');
+el.scrollWidth > el.clientWidth    // true ⇒ 有横向溢出
+el.scrollHeight > el.clientHeight  // 顺带看竖向要不要滚
+```
+
 ## 项目数据是 DAG，不是树
 
 `data/projects.json` 用的是 **`nodes` 节点表 + `edges` 边表**（一个节点可以有多个上游），不是嵌套的 `children` 树。改代码时不要按树递归写；旧的树格式会在 `migrate_project()` 里自动迁移。详见 `docs/design/project-management-design.md`。

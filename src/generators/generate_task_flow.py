@@ -40,6 +40,8 @@ GEN_DIR = os.path.dirname(os.path.abspath(__file__))
 if GEN_DIR not in sys.path:
     sys.path.insert(0, GEN_DIR)
 from meta import (  # noqa: E402
+    BLOCKER_META,
+    BLOCKER_ORDER,
     CATEGORY_FALLBACK_ICON,
     CATEGORY_ICON,
     CATEGORY_ORDER,
@@ -407,6 +409,41 @@ body{{background:#f5f6f8;font-family:-apple-system,"Segoe UI","PingFang SC","Mic
 .summary b{{color:#1f2733}}
 .add-btn{{font-size:11px;color:#3b6fb0;cursor:pointer;border:1px solid #c8d8ee;border-radius:8px;padding:2px 8px;background:#e8eef8;transition:all .15s}}
 .add-btn:hover{{background:#3b6fb0;color:#fff}}
+/* 已完成任务的后评估入口。和「＋ 添加节点」对称: 未完成时能加节点, 完成了就该复盘。
+   绿色是为了和"添加节点"(蓝)在扫视时分开 */
+.rev-btn{{font-size:11px;color:#3a7a56;cursor:pointer;border:1px solid #a8d8bd;border-radius:8px;padding:2px 8px;background:#f3fbf6;transition:all .15s}}
+.rev-btn:hover{{background:#2e9e5b;color:#fff;border-color:#2e9e5b}}
+
+/* 后评估弹窗: 事实层 + 推进时间轴 + 定向提问 + 卡点列表 */
+.facts{{display:grid;grid-template-columns:repeat(2,1fr);gap:8px 14px;font-size:12px;color:#5a6577;margin-top:4px}}
+.facts div{{display:flex;justify-content:space-between;gap:8px;border-bottom:1px dashed #eef1f6;padding-bottom:5px}}
+.facts b{{color:#1f2733}}
+.facts b.bad{{color:#d6453d}}
+/* overflow:hidden 是必须的: 圆点定位在 left:99% 处、右端日期贴着右边界,
+   都会甩出容器几个像素。只溢出一点点, 却足以让整个弹窗冒出横向滚动条 */
+.timeline{{position:relative;height:38px;margin:14px 0 4px;overflow:hidden}}
+.tl-axis{{position:absolute;left:0;right:0;top:15px;height:2px;background:#eef1f6}}
+.tl-gap{{position:absolute;top:13px;height:6px;background:#f0dada;border-radius:3px}}
+.tl-dot{{position:absolute;top:9px;width:10px;height:10px;box-sizing:border-box;border-radius:50%;background:#3b6fb0;border:2px solid #fff;box-shadow:0 0 0 1px #c8d8ee;transform:translateX(-50%)}}
+.tl-cap{{position:absolute;top:26px;font-size:10px;color:#8893a7;white-space:nowrap}}
+.ask{{font-size:12px;color:#5a6577;background:#f8fafd;border:1px solid #e3e8f0;border-radius:8px;padding:10px;margin-top:10px;line-height:1.6}}
+.ask .opts{{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}}
+.ask .opts button{{font-size:11px;padding:3px 9px;border-radius:7px;border:1px solid #d8dee9;background:#fff;color:#3a4456;cursor:pointer}}
+.ask .opts button:hover{{border-color:#3b6fb0;color:#3b6fb0}}
+.blockers{{display:flex;flex-direction:column;gap:6px;margin-top:6px}}
+.blocker{{display:flex;align-items:center;gap:8px;font-size:12px;background:#f8fafd;border:1px solid #e3e8f0;border-radius:8px;padding:6px 9px}}
+.blocker .bt{{font-weight:700;flex:none}}
+.blocker .bd{{color:#8893a7;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}}
+.blocker .x{{margin-left:auto;cursor:pointer;color:#b0b8c6;flex:none}}
+.blocker .x:hover{{color:#d6453d}}
+/* ⚠️ 这两条必须带 .modal 前缀。
+   本页的 `.modal input, .modal select{{width:100%}}` 定义在**下面更靠后**的位置,
+   特异性相同(都是 0,1,1)时后者胜出 —— 光写 `.blk-row select` 会被它压过去。
+   加前缀后特异性升到 0,2,1, 稳压它。 */
+.modal .blk-row{{display:flex;gap:8px;margin-top:8px;align-items:center}}
+.modal .blk-row select{{flex:1;min-width:0;padding:6px 8px;font-size:12px}}
+.modal .blk-row button{{flex:none;padding:6px 14px;font-size:12px;border-radius:8px;border:1px solid #d8dee9;background:#fff;color:#3a4456;cursor:pointer;white-space:nowrap}}
+.modal .blk-row button:hover{{border-color:#3b6fb0;color:#3b6fb0}}
 .node-actions{{display:inline-flex;gap:4px;margin-left:6px}}
 .node-act{{font-size:11px;cursor:pointer;opacity:.4;transition:opacity .15s;border:none;background:none;padding:0 2px}}
 .node-act:hover{{opacity:1}}
@@ -471,6 +508,8 @@ body{{background:#f5f6f8;font-family:-apple-system,"Segoe UI","PingFang SC","Mic
   .rev-grid {{ grid-template-columns: 1fr; }}
   .review {{ padding: 16px; }}
   .modal {{ padding: 18px; }}
+  /* 后评估: 窄屏改单列 —— 两列时每列只剩 100px 出头, 标签和数字会互相压 */
+  .facts {{ grid-template-columns: 1fr; }}
 }}
 
 /* 触屏没有 hover, 置顶与节点操作按钮默认太淡会点不到 */
@@ -534,6 +573,11 @@ const CAT_ICON = {js(CATEGORY_ICON)};
 const ST_META = {js(STATUS_META)};
 const PRI_META = {pri_meta_json};
 const PRI_ORD = {js({k: i for i, k in enumerate(PRIORITY_ORDER)})};
+// 后评估用到的两份元数据。卡点必须归类而非自由文本 —— 否则既统计不出
+// "最常因为什么卡住", 也没法反哺配额调整 (设计文档 §2.9.4)
+const BLOCKER = {js(BLOCKER_META)};
+const BLOCKER_ORDER = {js(BLOCKER_ORDER)};
+const QUAD = {js(QUADRANT_META)};
 
 let curCat = 'all', curSt = 'all', curSort = 'default';
 
@@ -619,6 +663,7 @@ function renderTree(t) {{
       📊 ${{t.finished ? '全流程总耗时' : '已耗时'}}: <b>${{t.total_days}}天</b>
       ${{t.stalled ? '&nbsp;<span class="node-warn">⚠️ 疑似停滞</span>' : ''}}
       ${{!t.finished ? `<span class="add-btn" onclick="openAddNode('${{esc(t.no)}}')">＋ 添加节点</span>` : ''}}
+      ${{t.finished ? `<span class="rev-btn" title="复盘: 估时偏差 / 推进空档 / 卡点" onclick="openReview('${{esc(t.no)}}')">🔍 后评估${{(t.blockers || []).length ? ' ' + t.blockers.length : ''}}</span>` : ''}}
     </div>`;
 
   return `
@@ -868,6 +913,158 @@ document.addEventListener('DOMContentLoaded', () => {{
   if (ok) ok.onclick = () => {{ const fn = confirmCb; closeConfirm(); if (fn) fn(); }};
 }});
 
+// ------- 后评估 (设计文档 §2.9) -------
+// 从四象限页搬过来的。放这里更顺手: 事实层要对照的推进时间轴、空档,
+// 本页的节点树本来就有; 而且本页每次加载都拉最新数据, 不像象限页是生成时的快照。
+// 两边共用同一份数据(blockers 字段)与同一个接口(/api/set_blockers)。
+let rvEditing = null;
+
+// 象限页自带这两个小工具, 本页没有 —— 直接补上而不是内联, 免得同一处写八遍
+function num(v) {{ const f = parseFloat(v); return isNaN(f) ? null : f; }}
+function fmt(v) {{ return (v === null || v === undefined || v === '') ? '—' : String(Math.round(Number(v) * 100) / 100); }}
+
+const ASK_OPTIONS = ['需求不清', '依赖他人', '返工', '估算失误'].filter(k => BLOCKER[k]);
+
+function closeReview() {{
+  document.getElementById('review-modal-bg').classList.add('hide');
+  rvEditing = null;
+}}
+
+function fillBlkType() {{
+  const sel = document.getElementById('rv-blk-type');
+  if (sel.options.length) return;          // 填一次就够, 选项是静态的
+  sel.innerHTML = BLOCKER_ORDER.map(k => `<option value="${{esc(k)}}">${{esc(k)}}</option>`).join('');
+}}
+
+function openReview(no) {{
+  const t = TASKS.find(x => String(x.no) === String(no));
+  if (!t) {{ toast('任务不存在', 'err'); return; }}
+  rvEditing = String(no);
+  document.getElementById('rv-title').textContent = '后评估 · No.' + no;
+  document.getElementById('rv-sub').textContent = t.name;
+
+  const est = num(t.estimate_h), act = num(t.actual_h);
+  const k = (est && act) ? act / est : null;
+  const facts = [];
+  facts.push(['完成日期', esc(t.completed_date || '—')]);
+  facts.push(['总历时', t.total_days + ' 天' + (t.plan_days ? '（计划 ' + t.plan_days + ' 天）' : '')]);
+  // 系数 > 1.2 标红: 它是"估时偏了"最直接的信号
+  facts.push(['估时 → 实际', (est ? fmt(est) + 'h' : '未估') + ' → ' + (act ? fmt(act) + 'h' : '未填'),
+    k !== null && k > 1.2 ? 'bad' : '']);
+  facts.push(['最长空档', t.max_gap ? t.max_gap + ' 天（' + esc(t.max_gap_from) + '–' + esc(t.max_gap_to) + '）' : '—']);
+  facts.push(['推进次数', (t.nodes || []).length + ' 次']);
+  facts.push(['象限', (t.quadrant && QUAD[t.quadrant]) ? t.quadrant + ' · ' + QUAD[t.quadrant].label : '未归类']);
+  document.getElementById('rv-facts').innerHTML = facts.map(f =>
+    '<div><span>' + f[0] + '</span><b class="' + (f[2] || '') + '">' + f[1] + '</b></div>').join('');
+
+  document.getElementById('rv-timeline').innerHTML = timelineHtml(t);
+
+  // 定向提问: 带日期锚点 + 预填选项, 比空白输入框好答得多。只在检测到异常时才问 ——
+  // 每次都问一串问题, 表单一定会被绕过 (§2.9.3)
+  const asks = [];
+  if (t.max_gap && t.max_gap > 5) {{
+    asks.push({{
+      msg: '检测到 ' + esc(t.max_gap_from) + '–' + esc(t.max_gap_to) + ' 有 ' + t.max_gap + ' 天无推进，当时卡在哪？',
+      opts: ASK_OPTIONS.concat(['技术难点', '外部阻塞', '精力不足']),
+      range: [t.max_gap_from, t.max_gap_to]
+    }});
+  }}
+  if (k !== null && k > 1.5) {{
+    asks.push({{
+      msg: '实际是估算的 ' + (Math.round(k * 100) / 100) + ' 倍，低估的主要原因？',
+      opts: ASK_OPTIONS, range: ['', '']
+    }});
+  }}
+  if (t.delayed) asks.push({{ msg: '任务已延期，主要原因？', opts: ['需求不清', '依赖他人', '被打断', '估算失误'], range: ['', ''] }});
+  document.getElementById('rv-ask').innerHTML = asks.map(a => `
+    <div class="ask">
+      ${{a.msg}}
+      <div class="opts">
+        ${{a.opts.map(o => `<button onclick="quickBlocker('${{esc(o)}}','${{esc(a.range[0])}}','${{esc(a.range[1])}}')">${{esc(o)}}</button>`).join('')}}
+      </div>
+    </div>`).join('');
+
+  fillBlkType();
+  renderBlockers(t);
+  document.getElementById('review-modal-bg').classList.remove('hide');
+}}
+
+// 推进时间轴: 节点少于 2 个画不出区间, 返回空串
+function timelineHtml(t) {{
+  const nodes = (t.nodes || []).filter(n => /^\\d{{4}}\\/\\d{{1,2}}\\/\\d{{1,2}}$/.test(n.date));
+  if (nodes.length < 2) return '';
+  const first = new Date(nodes[0].date.replace(/\\//g, '-')).getTime();
+  const last = new Date(nodes[nodes.length - 1].date.replace(/\\//g, '-')).getTime();
+  const span = Math.max(1, (last - first) / 86400000);
+  const pos = d => Math.min(99, Math.max(0, (new Date(d.replace(/\\//g, '-')).getTime() - first) / 86400000 / span * 100));
+  let gaps = '';
+  for (let i = 1; i < nodes.length; i++) {{
+    const a = pos(nodes[i - 1].date), b = pos(nodes[i].date);
+    // 只标出跨度 > 8% 的间隔: 短的都画出来会糊成一片, 反而看不出真正的空档
+    if (b - a > 8) gaps += `<span class="tl-gap" style="left:${{a}}%;width:${{b - a}}%"></span>`;
+  }}
+  const dots = nodes.map(n => `<span class="tl-dot" style="left:${{pos(n.date)}}%"></span>`).join('');
+  return `<div class="tl-axis"></div>${{gaps}}${{dots}}
+    <span class="tl-cap" style="left:0">${{esc(nodes[0].date)}}</span>
+    <span class="tl-cap" style="right:0">${{esc(nodes[nodes.length - 1].date)}}</span>`;
+}}
+
+function renderBlockers(t) {{
+  const list = t.blockers || [];
+  const box = document.getElementById('rv-blockers');
+  box.innerHTML = list.length
+    ? list.map((b, i) => `
+      <div class="blocker">
+        <span class="bt" style="color:${{(BLOCKER[b.type] || {{}}).color || '#8893a7'}}">${{esc(b.type)}}</span>
+        <span class="bd">${{esc(b.from || '')}}${{b.from && b.to ? '–' : ''}}${{esc(b.to || '')}}${{b.note ? ' · ' + esc(b.note) : ''}}</span>
+        <span class="x" onclick="delBlocker(${{i}})">✕</span>
+      </div>`).join('')
+    : '<div style="font-size:12px;color:#8893a7">还没有记录卡点。过程中的卡点最好顺手记在流程节点备注里。</div>';
+}}
+
+function saveBlockers(t, next) {{
+  return fetch('/api/set_blockers', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{no: String(t.no), blockers: next}})
+  }}).then(r => r.json()).then(d => {{
+    if (!d.ok) {{ toast(d.error || '保存失败', 'err'); return false; }}
+    t.blockers = next;
+    renderBlockers(t);
+    render();        // 卡片上的「🔍 后评估 N」要跟着变
+    return true;
+  }}).catch(() => {{ toast('连接服务器失败，请确认已启动 serve_task_flow.py', 'err'); return false; }});
+}}
+
+function quickBlocker(type, from, to) {{
+  const t = TASKS.find(x => String(x.no) === String(rvEditing));
+  if (!t) return;
+  const next = (t.blockers || []).concat([{{ type: type, from: from || '', to: to || '', note: '' }}]);
+  saveBlockers(t, next).then(ok => {{ if (ok) toast('已记录卡点：' + type, 'ok'); }});
+}}
+
+// 手动加卡点只带类型, 日期留空 —— 空值在数据层是合法的(渲染时那一段就不显示)。
+// 有日期的卡点来自「定向提问」: 它知道是哪段空档, 把区间一并带上, 准确度也高得多。
+function addBlocker() {{
+  const t = TASKS.find(x => String(x.no) === String(rvEditing));
+  if (!t) return;
+  const type = document.getElementById('rv-blk-type').value;
+  const next = (t.blockers || []).concat([{{ type: type, from: '', to: '', note: '' }}]);
+  saveBlockers(t, next).then(ok => {{ if (ok) toast('已添加卡点：' + type, 'ok'); }});
+}}
+
+function delBlocker(i) {{
+  const t = TASKS.find(x => String(x.no) === String(rvEditing));
+  if (!t) return;
+  saveBlockers(t, (t.blockers || []).filter((b, k) => k !== i));
+}}
+
+// 点弹窗背景关闭(与其它几个弹窗一致)
+document.addEventListener('DOMContentLoaded', () => {{
+  const rvb = document.getElementById('review-modal-bg');
+  if (rvb) rvb.addEventListener('click', e => {{ if (e.target.id === 'review-modal-bg') closeReview(); }});
+}});
+
 // ------- 置顶(当前重点) -------
 function togglePin(no) {{
   const t = TASKS.find(x => String(x.no) === String(no));
@@ -1079,6 +1276,32 @@ function deleteNode(no, idx) {{
     <div class="modal-actions">
       <button onclick="closeConfirm()">取消</button>
       <button class="btn-primary" id="cfm-ok" style="background:#d6453d;border-color:#d6453d">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 后评估弹窗 (事实层 + 推进时间轴 + 定向提问 + 卡点)
+     横向不滚动: 溢出源已在上面逐个修掉, 这里再兜一道 —— overflow-y:auto 会让
+     overflow-x 的计算值也变成 auto, 只要有一点溢出就冒出横向滚动条 -->
+<div id="review-modal-bg" class="modal-bg hide">
+  <div class="modal" style="width:520px;max-height:86vh;overflow-y:auto;overflow-x:hidden">
+    <h3 id="rv-title">任务后评估</h3>
+    <div id="rv-sub" style="font-size:13px;color:#5a6577;margin-bottom:10px"></div>
+    <div class="facts" id="rv-facts"></div>
+    <div class="timeline" id="rv-timeline"></div>
+    <div id="rv-ask"></div>
+    <label>卡点记录（归类后可用于统计"最常因为什么卡住"）</label>
+    <div class="blockers" id="rv-blockers"></div>
+    <!-- 手动加卡点只选类型。起止日期交给「定向提问」自动带 —— 点一下选项,
+         它会把检测到的那段空档区间一并写进去(那是算出来的, 准确)。
+         让人手填一个多半记不准的日期没有意义: "最常因为什么卡住"的统计只看类型,
+         而任务的开始/结束时间也已经有了(它是整体区间, 区分不了多个卡点)。 -->
+    <div class="blk-row">
+      <select id="rv-blk-type"></select>
+      <button onclick="addBlocker()">＋ 添加卡点</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="closeReview()">完成</button>
     </div>
   </div>
 </div>

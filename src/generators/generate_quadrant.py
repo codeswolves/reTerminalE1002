@@ -191,6 +191,15 @@ TEMPLATE = r"""<!DOCTYPE html>
   .quad-name { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 7px; }
   .quad-name .act { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
   .quad-meta { font-size: 11px; color: #8893a7; }
+  /* "已完成 N ▾": 展开/收起已完成的历史卡片(后评估入口在那些卡片上)。
+     原来只是"蓝色 + 虚线下划线"的小字, 混在"5 个 · 估时 4h"这行灰字里根本认不出来
+     —— 实测用户找了半天。做成胶囊, 与卡片上的「⏱ 工时」同一套视觉, 字号也提到 12px */
+  .quad-meta .qdone {
+    display: inline-block; font-size: 12px; font-weight: 600; line-height: 17px;
+    color: #3b6fb0; background: #e8eef8; border: 1px solid #c8d8ee; border-radius: 8px;
+    padding: 1px 8px; cursor: pointer; vertical-align: 1px;
+  }
+  .quad-meta .qdone:hover { background: #3b6fb0; color: #fff; border-color: #3b6fb0; }
   .quad-body { display: flex; flex-direction: column; gap: 8px; }
   .quad-empty { font-size: 12px; color: #b0b8c6; padding: 14px 2px; text-align: center; }
 
@@ -228,7 +237,14 @@ TEMPLATE = r"""<!DOCTYPE html>
   .mini { font-size: 11px; color: #8893a7; }
   .mini.done { color: #2e9e5b; }
   .mini.stall { color: #d6453d; }
-  .review-btn { font-size: 11px; color: #3b6fb0; cursor: pointer; text-decoration: underline; }
+  /* 后评估入口。原来只是一行带下划线的小字(约 33px 宽), 加上"已完成"默认收起,
+     等于藏了两层 —— 实测用户找不到。改成与流程跟踪页一致的绿色胶囊 */
+  .review-btn {
+    font-size: 11px; color: #3a7a56; cursor: pointer; flex: none;
+    border: 1px solid #a8d8bd; border-radius: 8px; padding: 2px 8px; background: #f3fbf6;
+    transition: all .15s;
+  }
+  .review-btn:hover { background: #2e9e5b; color: #fff; border-color: #2e9e5b; }
 
   .hidden { display: none !important; }
   .empty { text-align: center; color: #8893a7; padding: 40px 0; font-size: 13px; }
@@ -321,13 +337,16 @@ TEMPLATE = r"""<!DOCTYPE html>
     font-size: 11px; line-height: 1; padding: 3px 6px; cursor: pointer;
   }
   .done-btn:hover { border-color: #2e9e5b; background: #e7f4ec; }
-  /* 预期成果角标 */
+  /* 预期成果角标。尺寸/圆角/字号刻意与左边的「⏱ 工时」(.est) 保持一致 ——
+     原来是小一号(10px、圆角 6、padding 6)且未标记时用虚线边框,
+     三个角标并排时它明显"矮一截、虚一档", 看着像没做完的东西 */
   .dlib {
-    border: 1px solid; border-radius: 6px; padding: 2px 6px; font-size: 10px;
+    border: 1px solid; border-radius: 8px; padding: 2px 7px; font-size: 11px;
     background: #fff; cursor: pointer; white-space: nowrap;
   }
   .dlib:hover { background: #f7f9fc; }
-  .dlib.none { color: #a8b0bd !important; border-color: #dfe4ec !important; border-style: dashed; }
+  /* 未标记的配色对齐 .est.none(灰底灰框灰字), 靠"灰"表示待填, 而不是靠虚线 */
+  .dlib.none { color: #b0b8c6 !important; border-color: #e3e8f0 !important; background: #f5f6f8; }
 
   /* ---- 仪表盘 ---- */
   .dash { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
@@ -1132,8 +1151,9 @@ function cardHtml(t) {
   const prog = t.finished
     ? '<span class="mini done">✅ 已完成 ' + esc(t.completed_date || '') + '</span>'
     : '<span class="mini' + (t.stalled ? ' stall' : '') + '">' + (t.stalled ? '⚠ 停滞' : '进度 ' + t.today + '%') + '</span>';
+  // 带上卡点数(与流程跟踪页一致): 一眼看出这条复盘过没有、记了几条
   const rv = t.finished
-    ? `<span class="review-btn" onclick="openReview('${esc(t.no)}')">后评估</span>`
+    ? `<span class="review-btn" title="复盘: 估时偏差 / 推进空档 / 卡点" onclick="openReview('${esc(t.no)}')">后评估${(t.blockers || []).length ? ' ' + t.blockers.length : ''}</span>`
     : '';
   // 完成入口放在本页, 是为了让"完成任务 → 仪表盘变化"形成闭环 ——
   // 否则要跳到任务清单页去点, 再等这边轮询同步
@@ -1143,7 +1163,7 @@ function cardHtml(t) {
   const dlm = t.deliverable ? DL[t.deliverable] : null;
   const dlBadge = dlm
     ? `<span class="dlib" style="color:${dlm.color};border-color:${dlm.color}" title="预期成果：${esc(t.deliverable)}（点击修改）" onclick="event.stopPropagation();openDeliverable('${esc(t.no)}')">${esc(t.deliverable)}</span>`
-    : `<span class="dlib none" title="未标记预期成果（点击设置）" onclick="event.stopPropagation();openDeliverable('${esc(t.no)}')">成果?</span>`;
+    : `<span class="dlib none" title="未标记预期成果（点击设置）" onclick="event.stopPropagation();openDeliverable('${esc(t.no)}')">成果</span>`;
   return `
     <div class="card${t.finished ? ' done' : ''}" draggable="true" data-no="${esc(t.no)}" onclick="openHours('${esc(t.no)}')">
       <div class="card-head">
@@ -1169,17 +1189,37 @@ function cardHtml(t) {
     </div>`;
 }
 
+/* 已完成任务的展开状态, 按象限各记一份 —— 展开 A 不该把 B/C/D 的历史也一起摊开 */
+const showDone = {};
+
+function toggleDone(q) {
+  showDone[q] = !showDone[q];
+  renderMatrix();
+}
+
 function renderMatrix() {
   const html = QUAD_ORDER.map(q => {
     const m = QUAD[q];
-    // 这里刻意**含已完成**: 卡片会以"已做完"样式留在矩阵里(后评估要用它的历史)。
-    // 但诊断区的占比只算未完成, 两个数字会不同 —— 所以下面标出已完成个数, 让它们能对上账。
+    // 已完成的任务**默认收起**(2026-09-21 调整)。原先和未完成的一起铺开, 理由是
+    // "后评估要用它的历史" —— 但象限卡片首先是"当前要关注的事", 历史任务一直占着位置,
+    // 会把真正要做的挤到下面去。
+    // 也不能彻底藏掉: 后评估入口就挂在那些卡片上, 而它的数据正是靠完成后填的,
+    // 看不见就等于没人会去填。所以做成可点的开关, 默认收起。
     const list = state.tasks.filter(t => t.quadrant === q);
     const doneN = list.filter(t => t.finished).length;
+    const openN = list.length - doneN;
+    const showing = !!showDone[q];
+    const shown = showing ? list : list.filter(t => !t.finished);
     const h = list.reduce((s, t) => s + (num(t.estimate_h) || 0), 0);
-    const body = list.length
-      ? list.map(cardHtml).join('')
-      : `<div class="quad-empty">${q === 'D' ? 'D 类暂时没有任务' : '暂无任务'}</div>`;
+    const body = shown.length
+      ? shown.map(cardHtml).join('')
+      : `<div class="quad-empty">${q === 'D' ? 'D 类暂时没有任务' : '暂无任务'}${doneN && !showing ? '（' + doneN + ' 个已完成已收起）' : ''}</div>`;
+    // 已完成个数仍要标出来: 诊断区的占比只算未完成, 不标两个数字就对不上账
+    const dtoggle = doneN
+      ? ' · <a class="qdone" onclick="toggleDone(\'' + q + '\')" title="' +
+        (showing ? '收起已完成的任务' : '展开已完成的任务（含后评估入口）') + '">' +
+        (showing ? '收起已完成 ▴' : '已完成 ' + doneN + ' ▾') + '</a>'
+      : '';
     return `
       <div class="quad" data-q="${q}">
         <div class="quad-head">
@@ -1188,7 +1228,7 @@ function renderMatrix() {
             ${q} · ${m.label}
             <span class="act" style="color:${m.color};background:${m.bg}">${m.action}</span>
           </div>
-          <div class="quad-meta">${list.length} 个${doneN ? '（含已完成 ' + doneN + '）' : ''}${h > 0 ? ' · 估时 ' + fmt(h) + 'h' : ''}</div>
+          <div class="quad-meta">${openN} 个${dtoggle}${h > 0 ? ' · 估时 ' + fmt(h) + 'h' : ''}</div>
         </div>
         <div class="quad-body">${body}</div>
       </div>`;
@@ -1308,8 +1348,12 @@ function postComplete(no) {
 /* 带确认的完成。actual 非 null 时先写实际投入再标记完成 ——
    顺序不能反: 反了的话第二步失败就留下"完成了但没有实际投入"的状态, 而任务已经不在待安排里了 */
 function confirmComplete(no, t, actual) {
+  // 措辞必须与实际行为一致: 完成后卡片是**从象限列表里收起**(点「已完成 N ▾」还能展开),
+  // 不是消失。之前这里写的"从象限里移出"会让人以为找不到它了 —— 而
+  // 后评估入口恰恰就在收起的那批卡片上, 说错这句等于把入口一起藏了
   confirmBox('把 <b>No.' + esc(no) + ' ' + esc(t.name) + '</b> 标记为已完成？<br><br>' +
-    '完成后会从象限里移出，并立即计入仪表盘（平均耗时、本周完成、估时偏差）。',
+    '完成后会从象限列表里<b>收起</b>（象限右上角点「已完成 N ▾」可展开，<b>后评估</b>入口在那里），' +
+    '并立即计入仪表盘（平均耗时、本周完成、估时偏差）。',
     function () {
       if (actual === null || actual === undefined) { postComplete(no); return; }
       post('/api/set_actual', { no: String(no), actual_h: actual }).then(d => {
@@ -1422,7 +1466,7 @@ function saveHoursThenDone() {
     t.estimate_h = est;
     t.actual_h = act;
     // 工时上面刚写过, 这里 actual 传 null 不重复写。确认框仍要弹 ——
-    // 完成会从象限移出并计入仪表盘, 不是个该静默发生的动作
+    // 完成会让卡片从象限列表收起、并计入仪表盘, 不是个该静默发生的动作
     confirmComplete(no, t, null);
   }).catch(() => toast('连接服务器失败，请确认已启动 serve_task_flow.py', 'err'));
 }

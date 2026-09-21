@@ -44,6 +44,8 @@ week_plan.py
     - 时段可带 done_h(可选): 通过**这个时段**记进任务 actual_h 的投入。删时段时按它回退 ——
       没有它, 那笔投入就成了无主的(任务上还在, 却无从知道该退多少)。
       只有在周表里记的投入才算; 在任务清单页直接填的 actual_h 不经过时段, 删时段不影响它
+    - 任务被删除时(见 purge_task): 它在所有周的时段一并清除。否则时段会变成孤儿 ——
+      页面上块消失、却仍计入"未归类"工时, 表现为"时间表没多东西, 已排工时却对不上"
 
 设计文档: docs/design/time-quadrant-design.md §9.6 (与日排程 slots 结构对齐)
 """
@@ -310,6 +312,32 @@ def write_week_plan(week_start=None, slots=None):
         return {"week_start": week, "slots": data["weeks"][week],
                 "review": data["reviews"].get(week),
                 "buffer_h": data["buffers"].get(week, WEEK_BUFFER_H)}
+
+
+def purge_task(task_no):
+    """清掉某任务在**所有周**的排期, 返回被移除的时段数。
+
+    用于任务被删除时 —— 时段是按 no 引用任务的, 任务没了, 时段就成了孤儿。
+    孤儿时段的坏处很隐蔽: 页面上 slotHtml() 找不到任务会直接跳过(块消失),
+    但周表底部仍把它算进"未归类"工时 —— 表现为"时间表上没多出东西, 已排工时却对不上"。
+    这和 done_h 那条(时段没了、投入还在)是同一类毛病, 只是方向相反。
+
+    遍历所有周而不是只清当前周: 同一任务可能在历史周也排过。
+    """
+    task_no = str(task_no or "").strip()
+    if not task_no:
+        return 0
+    with _FILE_LOCK:
+        data = _read_raw()
+        removed = 0
+        for week, slots in data["weeks"].items():
+            kept = [s for s in slots if str(s.get("no", "")) != task_no]
+            removed += len(slots) - len(kept)
+            data["weeks"][week] = kept
+        # 没有命中就不写文件: 无谓重写会改掉 mtime, 也让"这次到底清掉了什么"变得不可见
+        if removed:
+            _write_raw(data)
+        return removed
 
 
 def write_week_review(week_start=None, text="", stamp="", snap=None):

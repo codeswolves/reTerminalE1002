@@ -47,6 +47,7 @@ from meta import (  # noqa: E402
     CATEGORY_ORDER,
     DEFAULT_PRIORITY,
     DELIVERABLE_META,
+    INTERRUPT_META,
     PRIORITY_META,
     PRIORITY_ORDER,
     QUADRANT_META,
@@ -220,6 +221,12 @@ def read_tasks():
         if deliverable not in DELIVERABLE_META:
             deliverable = ""
 
+        # 机动来源(只有临时任务会填): 同样只接受枚举内的值, 非法按"未标注"处理。
+        # 与 BLOCKER 同理 —— 自由文本统计不出"最常被什么打断"，也就没法反哺机动额度(§8)
+        interrupt = str(item.get("interrupt") or "").strip()
+        if interrupt not in INTERRUPT_META:
+            interrupt = ""
+
         # 临时(突发)任务标记: 由四象限页的"记一笔临时任务"入口创建, 只做**时间记录**
         # (占用了哪个时段、花了多久), 不是待办。所以页面上把它排除在待办池之外 ——
         # 否则临时琐事会堆满"待归类", 并把突发工时算进象限结构。
@@ -277,6 +284,8 @@ def read_tasks():
             "deliverable": deliverable,
             # 临时(突发)任务: 只记时间, 不进待办池
             "temp": temp,
+            # 机动来源; 空 = 未标注(合法状态 —— 记的时候可能没选, 早期记录也没这个字段)
+            "interrupt": interrupt,
             "max_gap": max_gap,
             "max_gap_from": max_gap_from,
             "max_gap_to": max_gap_to,

@@ -40,11 +40,14 @@ from meta import (  # noqa: E402
     DEFAULT_CATEGORY,
     DEFAULT_PRIORITY,
     DELIVERABLE_META,
+    INTERRUPT_META,
+    STATUS_ORDER,
     is_quadrant,
 )
 from week_plan import (  # noqa: E402
     GRID_MIN,
     clean_slots,
+    purge_task,
     read_week_plan,
     week_start_of,
     write_week_buffer,
@@ -410,6 +413,28 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
             new_no = str(max_no + 1)
             today_str = date.today().strftime("%Y/%m/%d")
 
+            # 状态: 取值必须在 meta.STATUS_ORDER 内。临时任务多半是"刚发生的事",
+            # 所以默认"已完成"; 非法值也按默认走 —— 它只是附加信息, 不值得为它挡掉整条记录
+            status = str(data.get("status") or "").strip()
+            if status not in STATUS_ORDER:
+                status = "已完成"
+            # finished 是 read_tasks 从**节点进度**推出来的(最后一个节点 progress >= 100),
+            # 只写 status 不够 —— 不落到节点上, 任务在任何页面上都还是"未完成"
+            prog = 100 if status == "已完成" else 0
+
+            # 预估工时: 留空则用时段时长 —— "这段时间被这件事占了"本来就是它的工作量语义
+            span_h = round(float(slot["to"]) - float(slot["from"]), 2)
+            est = _to_hours(data.get("estimate_h"))
+            if est is None or est <= 0:
+                est = span_h
+
+            # 机动来源: 可选, 取值必须在 meta.INTERRUPT_ORDER 内。
+            # **不给默认值** —— 随便选一个等于把打断静默归到某一类上, 而这类统计的
+            # 全部价值就在归因准确。留空会显式显示成"未标注", 之后点周表上那个块还能补标
+            interrupt = str(data.get("interrupt") or "").strip()
+            if interrupt not in INTERRUPT_META:
+                interrupt = ""
+
             new_task = {
                 "no": new_no,
                 "name": name,
@@ -418,11 +443,18 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
                 "category": str(data.get("category") or DEFAULT_CATEGORY).strip(),
                 # 标记: 只做时间记录, 不进待办池(不参与象限诊断与完成类统计)
                 "temp": True,
-                # 估时 = 这段时长本身。"花了/要花 N 小时"就是它的全部工作量语义
-                "estimate_h": round(float(slot["to"]) - float(slot["from"]), 2),
-                "nodes": [{"phase": "临时", "date": sel, "progress": 0,
+                "status": status,
+                "estimate_h": est,
+                "nodes": [{"phase": "临时", "date": sel, "progress": prog,
                            "note": str(data.get("note") or "").strip(), "owner": ""}],
             }
+            # 空值不写字段 —— 没标注就不该在文件里留个空串
+            if interrupt:
+                new_task["interrupt"] = interrupt
+            # 已完成: 投入就是这段时长本身 —— 这不是估计, 是"这段时间确实被占掉了"的事实。
+            # 未完成的留空, 等真做完时由时段弹窗的 ✅ 补上(那条路径会按 结束−开始 自动填)
+            if prog == 100:
+                new_task["actual_h"] = span_h
             tasks.append(new_task)
             write_tasks_raw(tasks)
 
@@ -574,11 +606,18 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
                 self._send_json({"ok": False, "error": "缺少任务编号"})
                 return
 
+            # 顺序: 先清排期, 再删任务。
+            # 反过来的话, 一旦清排期失败, 会留下"任务没了、周表里却还有它的时段"——
+            # 那种孤儿块在页面上是**看不见的**(slotHtml 找不到任务直接跳过),
+            # 但仍被计入"未归类"工时, 表现为"时间表没多东西、已排工时却对不上", 很难发现。
+            # 而这个顺序下的失败是明面上的: 任务还在列表里, 只是排期空了, 重删一次即可。
+            purged = purge_task(task_no)
+
             tasks = read_tasks_raw()
             tasks = [t for t in tasks if str(t.get("no", "")) != task_no]
             write_tasks_raw(tasks)
 
-            self._send_json({"ok": True})
+            self._send_json({"ok": True, "purged": purged})
 
         elif path == "/api/complete_task":
             data = self._read_body()
@@ -753,6 +792,23 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
                 return
             ok, err = set_task_field(task_no, "deliverable", dl or None)
             self._send_json({"ok": ok, "deliverable": dl} if ok
+                            else {"ok": False, "error": err})
+
+        elif path == "/api/set_interrupt":
+            # 时段弹窗里补标 / 改标机动来源。为什么必须有这个入口:
+            # 临时任务默认"已完成", 完成后就离开待安排池 —— 少了它, 记的时候漏选一次
+            # 就再也补不上, 那条时间记录会永远停在"未标注"
+            data = self._read_body()
+            task_no = str(data.get("no", "")).strip()
+            if not task_no:
+                self._send_json({"ok": False, "error": "缺少任务编号"})
+                return
+            iv = str(data.get("interrupt") or "").strip()
+            if iv and iv not in INTERRUPT_META:
+                self._send_json({"ok": False, "error": f"非法机动来源: {iv}"})
+                return
+            ok, err = set_task_field(task_no, "interrupt", iv or None)
+            self._send_json({"ok": ok, "interrupt": iv} if ok
                             else {"ok": False, "error": err})
 
         elif path == "/api/week_review":

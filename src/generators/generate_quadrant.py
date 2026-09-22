@@ -2435,6 +2435,28 @@ function planFirstFree(day) {
   return WK.workStart;      // 那天排满了就退回起点, 让重叠校验去提示
 }
 
+/* 把 [f, t] 按午休切成若干段, 返回 [[from,to], ...]。
+   空数组 = 整段都落在午休里 —— 那才是真的没有可排的时间。
+
+   为什么该由程序切、而不是让人拆两段: "午休不排工作"这条规则程序本来就懂 ——
+   拖拽会被拒绝、自动铺开会跳过(fillSpan)。手工填起止的地方原先直接拒绝、要求人
+   自己算, 等于把程序已经会的算术退给人做; 而人填的"9 点到 5 点"本来就是一句自然的
+   话, 不该被逼成两句话。
+
+   **保存与预览共用这一个函数** —— 预览说"排 6h"、实际排进去 6h, 必须来自同一次计算,
+   否则又是"两处各算一遍、哪天规则改了只改一处"的老问题。 */
+function carveBreak(f, t) {
+  const segs = [];
+  if (f < WK.brkStart - 1e-9) segs.push([f, Math.min(t, WK.brkStart)]);
+  if (t > WK.brkEnd + 1e-9) segs.push([Math.max(f, WK.brkEnd), t]);
+  return segs.filter(s => s[1] - s[0] > 1e-9);
+}
+
+/* 把切出来的段写成 "09:00–11:30 + 13:30–17:00" */
+function segsText(segs) {
+  return segs.map(s => hm(s[0]) + '–' + hm(s[1])).join(' + ');
+}
+
 /* 默认时长 = 1 小时。新任务没有"剩余工作量"可依据(那是已有任务才有的概念),
    给个常见起点即可 —— 三个框是联动的, 时间填完随时能改 */
 function planDefaultLen() { return 1; }
@@ -2494,15 +2516,21 @@ function planSync(src) {
   renderPlanRemain();
 }
 
-/* 预览: 本次占用多少 + 排完本周还剩多少。
+/* 预览: 本次**实际能排**多少 + 排完本周还剩多少。
    新任务没有历史投入可对照, 所以不摆时段弹窗那套"预计总投入 / 已投入"
-   (renderSlotRemain) —— 那是已有任务才有的数字 */
+   (renderSlotRemain) —— 那是已有任务才有的数字。
+
+   跨午休时这里显示的**不是** 结束−开始, 而是切掉午休后真正排进去的时长, 并且把切出来
+   的段一起列出来。必须说清: 人填"9 点到 5 点"、看到"本次 6h"才不会以为自己填错了 ——
+   而 6h 恰恰就是这件事的实际工作量。 */
 function renderPlanRemain() {
   const el = document.getElementById('pl-remain');
   if (!el) return;
   const f = timeToH(document.getElementById('pl-from').value);
   const tt = timeToH(document.getElementById('pl-to').value);
-  const add = (isFinite(f) && isFinite(tt) && tt > f) ? tt - f : 0;
+  const ok = isFinite(f) && isFinite(tt) && tt > f;
+  const segs = ok ? carveBreak(f, tt) : [];
+  const add = segs.reduce((a, s) => a + (s[1] - s[0]), 0);
   let html = '';
   if (add > 0) {
     const used = state.plan.slots.reduce((a, s) => a + (s.to - s.from), 0);
@@ -2511,11 +2539,15 @@ function renderPlanRemain() {
       (left < -0.001 ? '超 <b style="color:#d6453d">' + fmtDur(-left) + '</b>'
         : left > 0.001 ? '还剩 <b>' + fmtDur(left) + '</b>'
         : '<b style="color:#2e9e5b">刚好排满</b>');
-  }
-  // 跨午休当场就提示, 不必等到点保存才被拒 —— 拖拽与自动编排都会跳过午休, 这是全局约定
-  if (isFinite(f) && isFinite(tt) && f < WK.brkEnd - 1e-9 && tt > WK.brkStart + 1e-9) {
-    html += (html ? '<br>' : '') + '<b style="color:#d6453d">跨过了午休 ' +
-      hm(WK.brkStart) + '–' + hm(WK.brkEnd) + '，请拆成两段</b>';
+    // 只在**真的被切过**时说明(段数可能仍是 1 —— 如 11:00–12:00 会被截到 11:30)。
+    // 没跨午休却提一句"已跳过"只会让人以为出了什么事
+    if (add < (tt - f) - 1e-9) {
+      html += '<br>跨午休，自动排成 <b>' + segsText(segs) + '</b>（' +
+        hm(WK.brkStart) + '–' + hm(WK.brkEnd) + ' 不排工作）';
+    }
+  } else if (ok) {
+    html = '<b style="color:#d6453d">整段都落在午休 ' + hm(WK.brkStart) + '–' +
+      hm(WK.brkEnd) + ' 里，没有可排的时间</b>';
   }
   el.innerHTML = html;
 }
@@ -2527,23 +2559,30 @@ function savePlanTask() {
   const r = readTimeRange('pl-from', 'pl-to');
   if (r.err) { toast(r.err, 'err'); return; }
 
-  // 跨午休要拦: 拖拽会被拒绝、自动铺开会跳过 —— "午休一般不安排工作"是全局约定。
-  // 这里是唯一由人手工指定起止的入口, 不拦的话它就成了唯一能排出跨午休块的地方,
-  // 而那样的块既不合约定, 也没法被 fillSpan 之类的自动逻辑正确处理
-  if (r.f < WK.brkEnd - 1e-9 && r.t > WK.brkStart + 1e-9) {
-    toast('这段时间跨过午休（' + hm(WK.brkStart) + '–' + hm(WK.brkEnd) + '），请拆成两段', 'err');
+  // 跨午休**不再要求人拆两段**: 按午休切开, 一次排成多段(见 carveBreak)。
+  // 返回空数组说明整段都落在午休里 —— 那才是真的没得排
+  const segs = carveBreak(r.f, r.t);
+  if (!segs.length) {
+    toast('这段时间整个落在午休 ' + hm(WK.brkStart) + '–' + hm(WK.brkEnd) +
+      ' 里，没有可排的时间', 'err');
     return;
   }
 
   // **重叠必须先挡住**: 服务端的 clean_slots 只做边界与网格清洗, **不检查重叠**。
   // 两块叠在一起会互相压住看不清, 而且周表底部的"已安排 / 各象限 / 未归类"会重复计数。
-  // 拖拽与任务编排不会撞(它们是自动找空位); 只有这里是人手工指定, 所以只有这里要拦
-  const clash = state.plan.slots.find(s =>
-    s.day === day && r.f < s.to - 1e-9 && s.from < r.t - 1e-9);
+  // 拖拽与任务编排不会撞(它们是自动找空位); 只有这里是人手工指定, 所以只有这里要拦。
+  // **逐段查**: 只查原始区间的话, 段与段之间的午休空档会漏过去
+  let clash = null, clashSeg = null;
+  for (const g of segs) {
+    clash = state.plan.slots.find(s =>
+      s.day === day && g[0] < s.to - 1e-9 && s.from < g[1] - 1e-9);
+    if (clash) { clashSeg = g; break; }
+  }
   if (clash) {
     const ct = byNo(clash.no);
-    toast('这段时间和 ' + hm(clash.from) + '–' + hm(clash.to) + '（' +
-      (ct ? ct.name : 'No.' + clash.no) + '）重叠了', 'err');
+    toast(hm(clashSeg[0]) + '–' + hm(clashSeg[1]) + ' 和 ' +
+      hm(clash.from) + '–' + hm(clash.to) + '（' + (ct ? ct.name : 'No.' + clash.no) +
+      '）重叠了', 'err');
     return;
   }
 
@@ -2557,14 +2596,15 @@ function savePlanTask() {
 
   // 一次请求写两处(任务 + 时段)。为什么不能分两步: 新任务的 no 由**服务端**分配,
   // 前端拿不到它就没法写时段 —— 详见 serve_task_flow.py 里 /api/add_task 那段注释。
-  // est 传 null 时由服务端按本次时长兜底(与临时任务同一口径)
+  // 发**切好的段**而不是原始起止: 怎么切由上面那一次计算决定, 服务端只逐段校验(不重推)
   post('/api/add_task', {
     name: name, quadrant: quadrant, estimate_h: est,
-    date: sel, from: r.f, to: r.t
+    date: sel,
+    slots: segs.map(g => ({ from: g[0], to: g[1] }))
   }).then(d => {
     if (!d.ok) { toast(d.error || '录入失败', 'err'); return; }
     toast('已录入 No.' + d.no + '「' + name + '」 并排到 ' + WK.names[day - 1] + ' ' +
-      hm(r.f) + '–' + hm(r.t) + (d.hours ? '（' + fmtDur(d.hours) + '）' : ''), 'ok');
+      segsText(segs) + (d.hours ? '（' + fmtDur(d.hours) + '）' : ''), 'ok');
     // 服务端一次写了两处, 本地这两份状态都得跟上 ——
     // 只更新 slots 的话, 时段块会因为 byNo() 找不到这条新任务而整块不渲染
     if (d.task && !byNo(d.no)) state.tasks.push(d.task);

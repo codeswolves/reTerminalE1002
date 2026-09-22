@@ -45,6 +45,8 @@ from meta import (  # noqa: E402
     is_quadrant,
 )
 from week_plan import (  # noqa: E402
+    BREAK_END,
+    BREAK_START,
     GRID_MIN,
     clean_slots,
     purge_task,
@@ -101,28 +103,38 @@ def undo_actual(entries):
     return out
 
 
-def parse_slot_fields(data):
-    """解析并校验时段三件套(date / from / to)。
+def _hm(h):
+    """小时(浮点) -> '11:30'。小时的分数部分在二进制里没有精确表示, 所以先归一到整分钟再拆。"""
+    m = round(h * 60)
+    return f"{m // 60}:{m % 60:02d}"
 
-    成功返回 {"sel", "week", "day", "slot"}; 失败返回 {"error": 给用户看的话}。
 
-    「临时任务」与「录入新任务」用的是**同一套**时段规则, 所以校验只写一份:
-    两边都要求 日期合法 · 结束晚于开始 · 起止落在 GRID_MIN 网格上 · 时长不小于一格。
+def parse_slot_date(data):
+    """解析日期字段 → {"sel", "week", "day"} 或 {"error"}。
 
-    为什么不能只靠 clean_slots 兜底: 它会把 20:00→05:00 这种倒置区间静默"修正"成
-    20:00→20:30, 也会把没对齐的时间挪到最近网格 —— 用户看到的是"保存成功、却排在了
-    别的时间", 只会以为是自己记错。所以异常区间宁可明确拒绝。
-
-    返回的 slot 已过 clean_slots 处理, 但 day 仍是占位的 1 —— 调用方拿下面的 day 覆盖。
+    day 是**周内第几天**(1..7) 而不是日期: 时段按周存放, 存的本来就是相对周一的偏移。
     """
     sel = str(data.get("date") or "").strip() or date.today().strftime("%Y/%m/%d")
     sel_d = parse_date(sel)
     if not sel_d:
         return {"error": f"日期格式不对: {sel}"}
+    week = week_start_of(sel_d)
+    return {"sel": sel, "week": week, "day": (sel_d - parse_date(week)).days + 1}
 
+
+def parse_segment(h_from, h_to):
+    """校验一段 [h_from, h_to) → {"from", "to"} 或 {"error"}。
+
+    为什么不能只靠 clean_slots 兜底: 它会把 20:00→05:00 这种倒置区间静默"修正"成
+    20:00→20:30, 也会把没对齐的时间挪到最近网格 —— 用户看到的是"保存成功、却排在了
+    别的时间", 只会以为是自己记错。所以异常区间宁可明确拒绝。
+
+    **不含午休判定**: 计划时段不许压午休(见 parse_slot_list), 但临时任务记的是**已发生
+    的事实** —— 一场跨午休的会议本来就该如实记下来, 不能按"不排工作"去卡它。
+    """
     try:
-        h_from = float(data.get("from"))
-        h_to = float(data.get("to"))
+        h_from = float(h_from)
+        h_to = float(h_to)
     except (TypeError, ValueError):
         return {"error": "时间不合法"}
     if not (math.isfinite(h_from) and math.isfinite(h_to)):
@@ -138,10 +150,49 @@ def parse_slot_fields(data):
     span = clean_slots([{"no": "0", "day": 1, "from": h_from, "to": h_to}])
     if not span:
         return {"error": "时间不合法"}
+    return {"from": span[0]["from"], "to": span[0]["to"]}
 
-    week = week_start_of(sel_d)
-    return {"sel": sel, "week": week,
-            "day": (sel_d - parse_date(week)).days + 1, "slot": span[0]}
+
+def parse_slot_fields(data):
+    """单段版: 日期 + 一个 from/to → 供「临时任务」使用。"""
+    info = parse_slot_date(data)
+    if info.get("error"):
+        return info
+    seg = parse_segment(data.get("from"), data.get("to"))
+    if seg.get("error"):
+        return seg
+    info["slot"] = seg
+    return info
+
+
+def parse_slot_list(data):
+    """段列表版: 日期 + 若干段 → {"sel","week","day","slots":[...]} 或 {"error"}。
+    供「录入新任务」使用。
+
+    为什么接口收的是**段列表**而不是一个 from/to: 跨午休时要把一段切成两段(午休不排工作
+    是全局约定 —— 拖拽会被拒绝、自动铺开会跳过)。而"切在哪"前端为了画预览**已经算过
+    一遍**, 再让服务端算第二遍, 两处规则迟早分叉(与 fillSpan 只写一份是同一条理由)。
+    所以服务端只做它的本分: **逐段校验**并守住"不许压午休"这条不变量 ——
+    校验不变量不是重推切法, 前端算错了这里会明确拒绝, 而不是悄悄排出个错的。
+    """
+    info = parse_slot_date(data)
+    if info.get("error"):
+        return info
+    raw = data.get("slots")
+    if not isinstance(raw, list) or not raw:
+        return {"error": "没有要排的时段"}
+    out = []
+    for it in raw:
+        if not isinstance(it, dict):
+            return {"error": "时段格式不对"}
+        seg = parse_segment(it.get("from"), it.get("to"))
+        if seg.get("error"):
+            return seg
+        if seg["from"] < BREAK_END - 1e-9 and seg["to"] > BREAK_START + 1e-9:
+            return {"error": f"时段不能压在午休 {_hm(BREAK_START)}–{_hm(BREAK_END)} 上"}
+        out.append(seg)
+    info["slots"] = out
+    return info
 
 
 class TaskFlowHandler(SimpleHTTPRequestHandler):
@@ -353,20 +404,24 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
                 self._send_json({"ok": False, "error": "任务名不能为空"})
                 return
 
-            # 可选: 顺带排进本周一个时段(「录入新任务」那条路径会带上 date/from/to;
-            # 任务清单页的「添加任务」不带, 行为与从前完全一致)。校验与「临时任务」共用一份,
-            # 见 parse_slot_fields。
+            # 可选: 顺带排进本周的若干时段(「录入新任务」那条路径会带上;
+            # 任务清单页的「添加任务」不带, 行为与从前完全一致)。
             #
             # 为什么"建任务 + 排时段"要放在同一个请求里, 而不是让前端分两步调:
             # 新任务的 no 是**服务端**分配的, 前端拿不到它就没法写时段 —— 两步之间必然多
             # 一次往返, 而且中间失败会留下"任务建了、时段没排上", 用户重试还会再建一条重复
             # 任务。一次写完则要么都成、要么前端明确知道"任务已建、时段没排上"。
             slot_info = None
-            if data.get("from") is not None or data.get("to") is not None:
+            if data.get("slots") is not None:
+                slot_info = parse_slot_list(data)
+            elif data.get("from") is not None or data.get("to") is not None:
+                # 单段写法(from/to): 旧页面缓存可能还这么发, 一并认下
                 slot_info = parse_slot_fields(data)
-                if slot_info.get("error"):
-                    self._send_json({"ok": False, "error": slot_info["error"]})
-                    return
+                if "error" not in slot_info:
+                    slot_info["slots"] = [slot_info.pop("slot")]
+            if slot_info and slot_info.get("error"):
+                self._send_json({"ok": False, "error": slot_info["error"]})
+                return
 
             tasks = read_tasks_raw()
             max_no = 0
@@ -399,8 +454,8 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
                 # 这件事"时, 时长本来就是他的估时(与临时任务同口径); 二是留空会让这条任务
                 # 在象限占比里**整个缺席**, 而它明明已经占住了时间
                 if h is None and key == "estimate_h" and slot_info:
-                    h = round(float(slot_info["slot"]["to"])
-                              - float(slot_info["slot"]["from"]), 2)
+                    # 跨午休切成两段时, "本次时长"是**各段之和**(午休那部分不算工作量)
+                    h = round(sum(s["to"] - s["from"] for s in slot_info["slots"]), 2)
                 if h is not None:
                     new_task[key] = h
             # 预期成果: 空 = 事务性任务(无产出), 也是合法状态, 同样不写字段
@@ -420,12 +475,11 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
             # 明面上的: 任务在列表里、只是没排上, 重新排一次即可
             try:
                 plan = read_week_plan(slot_info["sel"])
-                saved = write_week_plan(plan["week_start"], plan["slots"] + [{
-                    "no": new_no,
-                    "day": slot_info["day"],
-                    "from": slot_info["slot"]["from"],
-                    "to": slot_info["slot"]["to"],
-                }])
+                saved = write_week_plan(plan["week_start"], plan["slots"] + [
+                    {"no": new_no, "day": slot_info["day"],
+                     "from": s["from"], "to": s["to"]}
+                    for s in slot_info["slots"]
+                ])
             except (OSError, ValueError) as exc:
                 self._send_json({"ok": False, "no": new_no,
                                  "error": f"任务已创建（No.{new_no}），"
@@ -438,8 +492,8 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
                 "ok": True, "no": new_no, "task": created,
                 "week_start": saved["week_start"], "slots": saved["slots"],
                 "review": saved.get("review"),
-                "hours": round(float(slot_info["slot"]["to"])
-                               - float(slot_info["slot"]["from"]), 2),
+                "hours": round(sum(s["to"] - s["from"]
+                                   for s in slot_info["slots"]), 2),
             })
 
         elif path == "/api/add_temp_task":

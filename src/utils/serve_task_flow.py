@@ -141,11 +141,14 @@ def parse_segment(h_from, h_to):
         return {"error": "时间不合法"}
     if h_to <= h_from:
         return {"error": "结束时间要晚于开始时间"}
-    for label, val in (("开始", h_from), ("结束", h_to)):
-        if round(val * 60) % GRID_MIN:
-            return {"error": f"{label}时间要以 {GRID_MIN} 分钟为单位"}
-    if h_to - h_from < GRID_MIN / 60.0 - 1e-9:
+    # 约束的是**时长**而不是起止: 起点允许任意分钟 —— 真实的事不按 :10 发生(21:25 的会
+    # 就记 21:25), 这个网格的意义只是"别记成 9:07 这种精度"。用整天分钟数算, 避开小时
+    # 换算的浮点噪声(21:25 = 21.416666666666668)
+    mins = round((h_to - h_from) * 60)
+    if mins < GRID_MIN:
         return {"error": f"时长至少 {GRID_MIN} 分钟"}
+    if mins % GRID_MIN:
+        return {"error": f"时长要以 {GRID_MIN} 分钟为单位（当前 {mins} 分钟）"}
 
     span = clean_slots([{"no": "0", "day": 1, "from": h_from, "to": h_to}])
     if not span:

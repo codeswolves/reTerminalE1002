@@ -787,9 +787,9 @@ TEMPLATE = r"""<!DOCTYPE html>
     <h3 id="sl-title">调整时段</h3>
     <div class="sub" id="sl-sub"></div>
     <label>开始时间</label>
-    <input type="time" id="sl-from" step="600">
+    <input type="time" id="sl-from" step="60">
     <label>结束时间</label>
-    <input type="time" id="sl-to" step="600">
+    <input type="time" id="sl-to" step="60">
     <label>这次实际做了多少（分钟）</label>
     <input type="number" id="sl-done" min="0" step="5" placeholder="留空 = 只改时间">
     <div class="mini" id="sl-remain"></div>
@@ -826,11 +826,11 @@ TEMPLATE = r"""<!DOCTYPE html>
     <div class="two">
       <div>
         <label>开始</label>
-        <input type="time" id="tmp-from" step="600">
+        <input type="time" id="tmp-from" step="60">
       </div>
       <div>
         <label>结束</label>
-        <input type="time" id="tmp-to" step="600">
+        <input type="time" id="tmp-to" step="60">
       </div>
     </div>
     <label>预估工时（小时）</label>
@@ -908,7 +908,7 @@ TEMPLATE = r"""<!DOCTYPE html>
     <div class="three">
       <div>
         <label>开始</label>
-        <input type="time" id="pl-from" step="600" oninput="planSync('from')">
+        <input type="time" id="pl-from" step="60" oninput="planSync('from')">
       </div>
       <div>
         <label>时长（小时）</label>
@@ -916,7 +916,7 @@ TEMPLATE = r"""<!DOCTYPE html>
       </div>
       <div>
         <label>结束</label>
-        <input type="time" id="pl-to" step="600" oninput="planSync('to')">
+        <input type="time" id="pl-to" step="60" oninput="planSync('to')">
       </div>
     </div>
     <label>预估工时（小时）</label>
@@ -1861,22 +1861,39 @@ function timeToH(v) {
   const m = String(v || '').match(/^(\d{1,2}):(\d{2})$/);
   return m ? (+m[1] * 60 + +m[2]) / 60 : NaN;
 }
-/* 是否落在时间网格上(10 分钟的整数倍)。
-   不落网格时**提示并拒绝**, 不静默挪到最近的网格 —— 那会表现为"说保存成功、却排在别的时间" */
-function onGrid(h) {
-  return Math.abs(Math.round(h * 60) % WK.gridMin) < 1e-6;
+/* 时长是否是时间网格的整数倍(GRID_MIN 分钟)。
+
+   **判的是时长, 不是起止**: 起点允许任意分钟 —— 真实的事不按 :10 发生(21:25 的会就
+   填 21:25)。原先把起止都卡在刻度上, 于是这种会只能记成 21:20 或 21:30, 凭空差几分钟,
+   而人填的时间本来就是亲眼看到的那个。
+   不落网格时**提示并拒绝**, 不静默把时长改成整数倍 —— 那会表现为"说保存成功、却和填的不一样" */
+function onGridSpan(f, t) {
+  return Math.abs(Math.round((t - f) * 60) % WK.gridMin) < 1e-6;
 }
+
+/* 一对起止的合法性检查(**不碰 DOM**)。通过返回 '', 否则返回该给用户看的那句话。
+   `readTimeRange` 与「录入新任务」的预览行**共用它** —— 各写一遍的话, 预览里说的和点保存
+   时说的会不一样(真踩过: 预览说"要以 10 分钟为单位(当前 7 分钟)", 保存却说"至少 10 分钟",
+   同一件事两种说法, 人只会以为其中一个在乱报) */
+function spanErr(f, t) {
+  if (!isFinite(f) || !isFinite(t)) return '请填写开始与结束时间';
+  if (f < WK.start - 1e-6 || t > WK.end + 1e-6)
+    return '时间要在 ' + hm(WK.start) + ' – ' + hm(WK.end) + ' 之间';
+  const mins = Math.round((t - f) * 60);
+  // 先判"太短": 7 分钟的真问题是"不够一格", 不是"不是 10 的整数倍" —— 说法得对齐问题本身
+  if (mins < WK.gridMin) return '结束时间至少要比开始晚 ' + WK.gridMin + ' 分钟';
+  // 带上"当前多少分钟": 只说"要以 10 分钟为单位", 人还得自己算差在哪
+  if (!onGridSpan(f, t))
+    return '时长要以 ' + WK.gridMin + ' 分钟为单位（当前 ' + mins + ' 分钟）';
+  return '';
+}
+
 /* 读并校验一对时间输入框。通过返回 {f, t}, 否则返回 {err} */
 function readTimeRange(fromId, toId) {
   const f = timeToH(document.getElementById(fromId).value);
   const t = timeToH(document.getElementById(toId).value);
-  if (isNaN(f) || isNaN(t)) return { err: '请填写开始与结束时间' };
-  if (!onGrid(f) || !onGrid(t)) return { err: '时间要以 ' + WK.gridMin + ' 分钟为单位' };
-  if (f < WK.start - 1e-6 || t > WK.end + 1e-6)
-    return { err: '时间要在 ' + hm(WK.start) + ' – ' + hm(WK.end) + ' 之间' };
-  if (t - f < WK.gridMin / 60 - 1e-6)
-    return { err: '结束时间至少要比开始晚 ' + WK.gridMin + ' 分钟' };
-  return { f: f, t: t };
+  const e = spanErr(f, t);
+  return e ? { err: e } : { f: f, t: t };
 }
 
 /* 按**本地时区**构造日期。不能用 new Date("2026-09-14") —— 那会被当成 UTC 午夜解析,
@@ -2529,6 +2546,12 @@ function renderPlanRemain() {
   const f = timeToH(document.getElementById('pl-from').value);
   const tt = timeToH(document.getElementById('pl-to').value);
   const ok = isFinite(f) && isFinite(tt) && tt > f;
+  // 起止/时长不合法就**当场**说 —— 否则要等到点保存才被拒, 那时别的字段都填完了。
+  // 复用 spanErr: 屏幕上说的和保存时说的必须是同一句(见它的注释)
+  if (isFinite(f) && isFinite(tt)) {
+    const e = spanErr(f, tt);
+    if (e) { el.innerHTML = '<b style="color:#d6453d">' + esc(e) + '</b>'; return; }
+  }
   const segs = ok ? carveBreak(f, tt) : [];
   const add = segs.reduce((a, s) => a + (s[1] - s[0]), 0);
   let html = '';
@@ -2890,12 +2913,13 @@ function openTempTask() {
   di.value = fmtYmd(d).split('/').join('-');
   document.getElementById('tmp-name').value = '';
 
-  // 默认时段: 今天就从"当前 10 分钟刻度"起 1h, 否则 9:00–10:00。
-  // 突发多半是刚发生的事, 默认当下比默认上班时间少改两次
+  // 默认时段: 今天就从**当前这一分钟**起 1h, 否则 9:00–10:00。
+  // 突发多半是刚发生的事, 默认当下比默认上班时间少改两次。
+  // 不再按网格向下取整: 起点本来就允许任意分钟, 取整只会让默认值比"现在"差几分钟 ——
+  // 而它正是用来记"刚刚发生了什么"的
   let h0 = WK.workStart;
   if (inWeek && d.toDateString() === now.toDateString()) {
-    const cur = now.getHours() +
-      Math.floor(now.getMinutes() / WK.gridMin) * WK.gridMin / 60;
+    const cur = now.getHours() + now.getMinutes() / 60;
     if (cur >= WK.start && cur <= WK.end - 1) h0 = cur;
   }
   if (inBreak(h0)) h0 = WK.brkEnd;            // 落到午休时段就挪到午休之后
@@ -3390,7 +3414,9 @@ function init() {
   WK.gridMin = WEEK_META.gridMin;
   // 时间输入框的上下界取自 WK(不写死在 HTML 里, 免得两处不一致)
   // 含「录入新任务」的 pl-from / pl-to —— 它们同样是手填起止的地方。真校验仍在
-  // readTimeRange(它按 WK.start/WK.end 判), 这里给的只是浏览器自带的边界提示
+  // readTimeRange(它按 WK.start/WK.end 判), 这里给的只是浏览器自带的边界提示。
+  // 这些框的 step 是 60 秒(1 分钟), 与 GRID_MIN 无关 —— 网格约束的是**时长**、不是起点,
+  // 所以浏览器也不该把 21:25 这样的起点判成 stepMismatch(见 onGridSpan)
   ['sl-from', 'sl-to', 'tmp-from', 'tmp-to', 'pl-from', 'pl-to'].forEach(id => {
     const el = document.getElementById(id);
     el.min = hToTime(WK.start);
@@ -3462,7 +3488,8 @@ def build_html(tasks):
         "workStart": WORK_START,
         "workEnd": WORK_END,
         "names": DAY_NAMES,
-        # 时间网格(分钟): 输入的时间必须落在它的整数倍上, 见 GRID_MIN 的注释
+        # 时长粒度(分钟): 时长必须是它的整数倍, 但**起点不限**(21:25 的会就记 21:25)。
+        # 见 week_plan.GRID_MIN 的注释
         "gridMin": GRID_MIN,
     }
     plan = read_week_plan()

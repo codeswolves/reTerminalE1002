@@ -101,6 +101,49 @@ def undo_actual(entries):
     return out
 
 
+def parse_slot_fields(data):
+    """解析并校验时段三件套(date / from / to)。
+
+    成功返回 {"sel", "week", "day", "slot"}; 失败返回 {"error": 给用户看的话}。
+
+    「临时任务」与「录入新任务」用的是**同一套**时段规则, 所以校验只写一份:
+    两边都要求 日期合法 · 结束晚于开始 · 起止落在 GRID_MIN 网格上 · 时长不小于一格。
+
+    为什么不能只靠 clean_slots 兜底: 它会把 20:00→05:00 这种倒置区间静默"修正"成
+    20:00→20:30, 也会把没对齐的时间挪到最近网格 —— 用户看到的是"保存成功、却排在了
+    别的时间", 只会以为是自己记错。所以异常区间宁可明确拒绝。
+
+    返回的 slot 已过 clean_slots 处理, 但 day 仍是占位的 1 —— 调用方拿下面的 day 覆盖。
+    """
+    sel = str(data.get("date") or "").strip() or date.today().strftime("%Y/%m/%d")
+    sel_d = parse_date(sel)
+    if not sel_d:
+        return {"error": f"日期格式不对: {sel}"}
+
+    try:
+        h_from = float(data.get("from"))
+        h_to = float(data.get("to"))
+    except (TypeError, ValueError):
+        return {"error": "时间不合法"}
+    if not (math.isfinite(h_from) and math.isfinite(h_to)):
+        return {"error": "时间不合法"}
+    if h_to <= h_from:
+        return {"error": "结束时间要晚于开始时间"}
+    for label, val in (("开始", h_from), ("结束", h_to)):
+        if round(val * 60) % GRID_MIN:
+            return {"error": f"{label}时间要以 {GRID_MIN} 分钟为单位"}
+    if h_to - h_from < GRID_MIN / 60.0 - 1e-9:
+        return {"error": f"时长至少 {GRID_MIN} 分钟"}
+
+    span = clean_slots([{"no": "0", "day": 1, "from": h_from, "to": h_to}])
+    if not span:
+        return {"error": "时间不合法"}
+
+    week = week_start_of(sel_d)
+    return {"sel": sel, "week": week,
+            "day": (sel_d - parse_date(week)).days + 1, "slot": span[0]}
+
+
 class TaskFlowHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=OUTPUT_DIR, **kwargs)
@@ -310,6 +353,21 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
                 self._send_json({"ok": False, "error": "任务名不能为空"})
                 return
 
+            # 可选: 顺带排进本周一个时段(「录入新任务」那条路径会带上 date/from/to;
+            # 任务清单页的「添加任务」不带, 行为与从前完全一致)。校验与「临时任务」共用一份,
+            # 见 parse_slot_fields。
+            #
+            # 为什么"建任务 + 排时段"要放在同一个请求里, 而不是让前端分两步调:
+            # 新任务的 no 是**服务端**分配的, 前端拿不到它就没法写时段 —— 两步之间必然多
+            # 一次往返, 而且中间失败会留下"任务建了、时段没排上", 用户重试还会再建一条重复
+            # 任务。一次写完则要么都成、要么前端明确知道"任务已建、时段没排上"。
+            slot_info = None
+            if data.get("from") is not None or data.get("to") is not None:
+                slot_info = parse_slot_fields(data)
+                if slot_info.get("error"):
+                    self._send_json({"ok": False, "error": slot_info["error"]})
+                    return
+
             tasks = read_tasks_raw()
             max_no = 0
             for t in tasks:
@@ -337,6 +395,12 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
             # 工时: 空或 0 = 不写字段 —— "未估算"是合法状态, 不能按 0 计入统计(§7.3)
             for key in ("estimate_h", "actual_h"):
                 h = _to_hours(data.get(key))
+                # 排了时段而估时留空 → 按本次时长兜底。两重理由: 一是人被问"这段时间做
+                # 这件事"时, 时长本来就是他的估时(与临时任务同口径); 二是留空会让这条任务
+                # 在象限占比里**整个缺席**, 而它明明已经占住了时间
+                if h is None and key == "estimate_h" and slot_info:
+                    h = round(float(slot_info["slot"]["to"])
+                              - float(slot_info["slot"]["from"]), 2)
                 if h is not None:
                     new_task[key] = h
             # 预期成果: 空 = 事务性任务(无产出), 也是合法状态, 同样不写字段
@@ -345,16 +409,48 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
             tasks.append(new_task)
             write_tasks_raw(tasks)
 
-            self._send_json({"ok": True, "no": new_no})
+            # 没带时段就到此为止(任务清单页的路径): 响应形状与从前一致
+            if not slot_info:
+                self._send_json({"ok": True, "no": new_no})
+                return
+
+            # 先建任务、后写时段。顺序与「临时任务」一致:
+            # 反过来的话, 时段会指向一个还不存在的 no —— 那种块在页面上**看不见**
+            # (slotHtml 找不到任务直接跳过), 却仍计入"未归类"工时。而这个顺序的失败是
+            # 明面上的: 任务在列表里、只是没排上, 重新排一次即可
+            try:
+                plan = read_week_plan(slot_info["sel"])
+                saved = write_week_plan(plan["week_start"], plan["slots"] + [{
+                    "no": new_no,
+                    "day": slot_info["day"],
+                    "from": slot_info["slot"]["from"],
+                    "to": slot_info["slot"]["to"],
+                }])
+            except (OSError, ValueError) as exc:
+                self._send_json({"ok": False, "no": new_no,
+                                 "error": f"任务已创建（No.{new_no}），"
+                                          f"但写入时间表失败：{exc}"})
+                return
+
+            created = next((t for t in read_tasks()
+                            if str(t.get("no")) == new_no), None)
+            self._send_json({
+                "ok": True, "no": new_no, "task": created,
+                "week_start": saved["week_start"], "slots": saved["slots"],
+                "review": saved.get("review"),
+                "hours": round(float(slot_info["slot"]["to"])
+                               - float(slot_info["slot"]["from"]), 2),
+            })
 
         elif path == "/api/add_temp_task":
             """记一笔临时(突发)任务: 建任务 + 排进周表时段, 一次写完。
 
-            为什么要放在服务端一次完成, 而不是让前端先 add_task 再存周计划:
-            两步之间存在"任务建了但时段没排上"的窗口 —— 而时段块要靠 no 回任务里
-            取名称(slotHtml 找不到任务就整块不渲染), 留下一笔看不见的脏数据。
-            两份文件各有各的锁, 这里也做不到一个事务, 所以第二步失败时明确回报
+            为什么"建任务 + 排时段"要放在服务端一次完成, 而不是让前端先建任务再存周计划:
+            新任务的 no 是**服务端**分配的, 前端拿不到它就没法写时段 —— 两步之间必然多
+            一次往返, 而中间失败会留下"任务建了、时段没排上", 用户重试还会再建一条重复记录。
+            两份文件各有各的锁, 这里做不到一个事务, 所以第二步失败时明确回报
             "任务已建、时段没排上", 而不是笼统说失败。
+            (「录入新任务」走的是 /api/add_task 那条路, 同样的事由写在那边。)
             """
             data = self._read_body()
             name = str(data.get("name") or "").strip()
@@ -362,44 +458,12 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
                 self._send_json({"ok": False, "error": "请填写这件事是什么"})
                 return
 
-            sel = str(data.get("date") or "").strip() or date.today().strftime("%Y/%m/%d")
-            sel_d = parse_date(sel)
-            if not sel_d:
-                self._send_json({"ok": False, "error": f"日期格式不对: {sel}"})
+            # 时段校验与「录入新任务」共用一份(见 parse_slot_fields)
+            info = parse_slot_fields(data)
+            if info.get("error"):
+                self._send_json({"ok": False, "error": info["error"]})
                 return
-
-            # 先自己判"结束晚于开始", 再交给 clean_slots 做夹取与半小时对齐。
-            # 不能只靠 clean_slots: 它会把 20:00→05:00 这种倒置区间静默"修正"成
-            # 20:00→20:30, 用户看到的是保存成功却排在了别的时间。
-            try:
-                h_from = float(data.get("from"))
-                h_to = float(data.get("to"))
-            except (TypeError, ValueError):
-                self._send_json({"ok": False, "error": "时间不合法"})
-                return
-            if not (math.isfinite(h_from) and math.isfinite(h_to)):
-                self._send_json({"ok": False, "error": "时间不合法"})
-                return
-            if h_to <= h_from:
-                self._send_json({"ok": False, "error": "结束时间要晚于开始时间"})
-                return
-            # 只接受落在 10 分钟网格上的时间。这里宁愿明确拒绝, 也不交给 clean_slots 静默
-            # 挪到最近的网格 —— 后者表现为"提示保存成功、却排在别的时间", 用户会以为是自己记错了
-            for label, val in (("开始", h_from), ("结束", h_to)):
-                if round(val * 60) % GRID_MIN:
-                    self._send_json({"ok": False,
-                                     "error": f"{label}时间要以 {GRID_MIN} 分钟为单位"})
-                    return
-            if h_to - h_from < GRID_MIN / 60.0 - 1e-9:
-                self._send_json({"ok": False, "error": f"时长至少 {GRID_MIN} 分钟"})
-                return
-
-            week = week_start_of(sel_d)
-            span = clean_slots([{"no": "0", "day": 1, "from": h_from, "to": h_to}])
-            if not span:
-                self._send_json({"ok": False, "error": "时间不合法"})
-                return
-            slot = span[0]
+            sel, week, day, slot = info["sel"], info["week"], info["day"], info["slot"]
 
             tasks = read_tasks_raw()
             max_no = 0
@@ -462,7 +526,7 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
                 plan = read_week_plan(sel)
                 saved = write_week_plan(plan["week_start"], plan["slots"] + [{
                     "no": new_no,
-                    "day": (sel_d - parse_date(week)).days + 1,
+                    "day": day,
                     "from": slot["from"],
                     "to": slot["to"],
                 }])

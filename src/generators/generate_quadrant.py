@@ -608,7 +608,7 @@ TEMPLATE = r"""<!DOCTYPE html>
         <button class="est" onclick="openArrange()"
                 title="选一批本周要做的任务，按优先级顺序自动铺进工作时间（不用一个个拖）">🗓 任务编排</button>
         <button class="est" onclick="openPlanTask()"
-                title="给某个任务精确指定一天里的一个时段 —— 拖拽与任务编排都做不到精确指定">＋ 计划任务</button>
+                title="录入一条新任务，并直接排进本周一个时段（正式任务，进象限与待安排池）">＋ 新任务</button>
         <button class="est" id="wk-rev-btn" onclick="openWeekReview()">📝 自评</button>
         <button class="est" onclick="openTempTask()" title="记录突发的临时事项，直接落到时间表上">＋ 临时任务</button>
         <button class="est" onclick="clearWeek()">清空本周</button>
@@ -890,17 +890,18 @@ TEMPLATE = r"""<!DOCTYPE html>
   </div>
 </div>
 
-<!-- 计划任务: 给**已有任务**精确排一个时段。
-     拖拽/任务编排都自动决定时长, 只有这里能直接指定"某任务 × 某天 × 某时段"。
-     与「临时任务」是两回事: 那个是新建一条时间记录(已发生的事), 这个是给已有任务排期 -->
+<!-- 录入新任务: 建一条**正式任务**, 并直接排进本周的一个时段。
+     与「临时任务」的分工 —— 那个记的是**已经发生的突发**(默认已完成、不进待办池、
+     不参与象限统计, 消耗算机动); 这个录的是**计划要做的事**(进象限与待安排池,
+     从 0% 开始, 参与统计)。两类事混在一个入口会让"这到底是记录还是计划"说不清 -->
 <div class="modal-bg hide" id="m-plan">
   <div class="modal" style="width:440px">
-    <h3>计划任务</h3>
+    <h3>录入新任务</h3>
     <div class="sub" id="pl-sub"></div>
-    <label>任务</label>
-    <select id="pl-task" onchange="planPickTask()"></select>
-    <label>预估工时（小时）</label>
-    <input type="number" id="pl-est" min="0" step="0.5" placeholder="留空 = 未估算">
+    <label>任务名称</label>
+    <input type="text" id="pl-name" placeholder="如：完成XX方案初稿">
+    <label>四象限（可不选）</label>
+    <select id="pl-quad">__QUAD_OPTIONS__</select>
     <label>哪天</label>
     <select id="pl-day" onchange="planPickDay()"></select>
     <!-- 三格联动: 改开始或时长顺推结束, 改结束反推时长 -->
@@ -918,10 +919,12 @@ TEMPLATE = r"""<!DOCTYPE html>
         <input type="time" id="pl-to" step="600" oninput="planSync('to')">
       </div>
     </div>
+    <label>预估工时（小时）</label>
+    <input type="number" id="pl-est" min="0" step="0.5" placeholder="留空 = 按本次时长">
     <div class="mini" id="pl-remain"></div>
     <div class="modal-actions">
       <button onclick="closeModal('m-plan')">取消</button>
-      <button class="btn-primary" onclick="savePlanTask()">排进时间表</button>
+      <button class="btn-primary" onclick="savePlanTask()">录入并排进时间表</button>
     </div>
   </div>
 </div>
@@ -2411,16 +2414,15 @@ function doArrange(sel) {
   savePlan(next, msg);
 }
 
-/* ---------------- 计划任务(给已有任务精确排一个时段) ---------------- */
-/* 为什么单独一个入口: 现有三条录时段的路径**都做不到精确指定** ——
-   拖拽按剩余工作量自动铺开、任务编排会替换整周、时段弹窗又得先有时段。
-   这里补的是"某任务 × 某天 × 某时段"这一格空白。
-   与「临时任务」是两回事: 那个**新建一条时间记录**(已发生的事), 这个是**给已有任务排期**。*/
+/* ---------------- 录入新任务(建任务 + 排一个时段) ---------------- */
+/* 与「临时任务」分成两个入口, 因为记的是**两类不同的事**:
+   临时任务录"已经发生的突发" —— 默认已完成、不进待办池、不参与象限统计, 消耗算机动;
+   这里录"计划要做的事" —— 进象限与待安排池, 从 0% 开始, 参与统计。
+   合成一个入口会让"这到底是在记录还是在计划"说不清, 也会把突发工时算进象限结构。
 
-function planTaskOf() {
-  const sel = document.getElementById('pl-task');
-  return sel && sel.value ? byNo(sel.value) : null;
-}
+   时段为什么在这个弹窗里填: 拖拽与任务编排都会**自动**决定位置与时长, 只有这里能
+   直接指定"某天 × 某时段"; 而新任务的 no 是**服务端**分配的, 前端拿不到它就没法在
+   下一步写时段 —— 所以"建任务 + 排时段"必须是同一个请求(见 serve_task_flow.py)。 */
 
 /* 某天在 [工作开始, 工作结束) 里第一个空闲的半小时刻度。
    只用来给个合理默认值 —— 真重叠了 savePlanTask 里还有硬校验兜着, 所以不必追求完美 */
@@ -2433,15 +2435,9 @@ function planFirstFree(day) {
   return WK.workStart;      // 那天排满了就退回起点, 让重叠校验去提示
 }
 
-/* "时长"的默认值 = 该任务的剩余工作量, 夹在 [0.5, 一天的工作窗长度] 之间。
-   这里**不扣本周已排的**(与 dragNeed 的唯一差别): 拖拽是"补缺口",
-   而用户点这个按钮是来**明确加一段**的 —— 扣掉会让默认值和他心里那个数对不上 */
-function planDefaultLen(t) {
-  const r = t ? remainOf(t) : 1;
-  const span = (WK.workEnd - WK.workStart) - (WK.brkEnd - WK.brkStart);
-  const v = r > 0.001 ? r : 1;
-  return Math.max(0.5, Math.round(Math.min(v, span) * 2) / 2);
-}
+/* 默认时长 = 1 小时。新任务没有"剩余工作量"可依据(那是已有任务才有的概念),
+   给个常见起点即可 —— 三个框是联动的, 时间填完随时能改 */
+function planDefaultLen() { return 1; }
 
 /* 默认选今天(在本周内时), 否则周一 */
 function planDefaultDay() {
@@ -2453,18 +2449,11 @@ function planDefaultDay() {
 }
 
 function openPlanTask() {
-  const tasks = pending().slice().sort(arrangeOrder);
-  document.getElementById('pl-task').innerHTML = tasks.length
-    ? tasks.map(t => {
-        const q = QUAD[t.quadrant];
-        const r = remainOf(t);
-        // 下拉里放得下的信息有限: 象限 + 名称 + 剩余(没有就写"未估算")
-        const tag = !num(t.estimate_h) ? '未估算'
-          : (r <= 0.001 ? '投入已满' : '剩 ' + fmt(r) + 'h');
-        return '<option value="' + esc(t.no) + '">' +
-          (q ? t.quadrant + ' · ' : '') + esc(t.name) + ' · ' + tag + '</option>';
-      }).join('')
-    : '<option value="">（没有未完成的任务）</option>';
+  document.getElementById('pl-name').value = '';
+  // 象限与预估工时都**不预填**: 象限是判断(不该替人定), 估时留空另有明确语义(按本次时长)
+  setSelectValue('pl-quad', '');
+  document.getElementById('pl-est').value = '';
+  document.getElementById('pl-len').value = planDefaultLen();
 
   // 周一到周日带上日期 —— 只写"周三"的话, 翻到历史周时会和真实日期对不上
   const ws = parseYmd(state.plan.week_start || TODAY);
@@ -2477,16 +2466,8 @@ function openPlanTask() {
     state.plan.week_start + ' · 本周已排 ' +
     fmtDur(state.plan.slots.reduce((a, x) => a + (x.to - x.from), 0)) +
     ' / 净可安排 ' + fmtDur(weekHours());
-  planPickTask();
-  openModal('m-plan');
-}
-
-/* 换任务: 回填它的预估工时, 并把时长重置为按它算的默认值 */
-function planPickTask() {
-  const t = planTaskOf();
-  document.getElementById('pl-est').value = (t && num(t.estimate_h)) ? num(t.estimate_h) : '';
-  document.getElementById('pl-len').value = planDefaultLen(t);
   planPickDay();
+  openModal('m-plan');
 }
 
 /* 换天: 把开始挪到那天第一个空闲位置, 再顺推结束 */
@@ -2513,38 +2494,35 @@ function planSync(src) {
   renderPlanRemain();
 }
 
-/* 预览: 预计 / 已投入 / 本次 / 排完还剩多少。
-   与时段弹窗的 renderSlotRemain 同一套说法 —— 两处读的是同一件事, 不该有两套口径 */
+/* 预览: 本次占用多少 + 排完本周还剩多少。
+   新任务没有历史投入可对照, 所以不摆时段弹窗那套"预计总投入 / 已投入"
+   (renderSlotRemain) —— 那是已有任务才有的数字 */
 function renderPlanRemain() {
   const el = document.getElementById('pl-remain');
   if (!el) return;
-  const t = planTaskOf();
-  if (!t) { el.innerHTML = ''; return; }
-  const total = num(t.estimate_h);
-  const used = num(t.actual_h) || 0;
   const f = timeToH(document.getElementById('pl-from').value);
   const tt = timeToH(document.getElementById('pl-to').value);
   const add = (isFinite(f) && isFinite(tt) && tt > f) ? tt - f : 0;
-  let html = '本任务：' + (total ? '预计总投入 ' + fmtDur(total) : '未估算');
-  if (used > 0) html += ' · 已投入 ' + fmtDur(used);
-  if (add > 0) html += ' · 本次 ' + fmtDur(add);
-  if (total) {
-    const left = total - used - add;
-    html += ' → ' + (left < -0.001 ? '超 <b style="color:#d6453d">' + fmtDur(-left) + '</b>'
-      : left > 0.001 ? '还剩 <b>' + fmtDur(left) + '</b>'
-      : '<b style="color:#2e9e5b">刚好用完</b>');
+  let html = '';
+  if (add > 0) {
+    const used = state.plan.slots.reduce((a, s) => a + (s.to - s.from), 0);
+    const left = weekHours() - used - add;
+    html = '本次 ' + fmtDur(add) + ' · 排完本周 ' +
+      (left < -0.001 ? '超 <b style="color:#d6453d">' + fmtDur(-left) + '</b>'
+        : left > 0.001 ? '还剩 <b>' + fmtDur(left) + '</b>'
+        : '<b style="color:#2e9e5b">刚好排满</b>');
   }
   // 跨午休当场就提示, 不必等到点保存才被拒 —— 拖拽与自动编排都会跳过午休, 这是全局约定
   if (isFinite(f) && isFinite(tt) && f < WK.brkEnd - 1e-9 && tt > WK.brkStart + 1e-9) {
-    html += '<br><b style="color:#d6453d">跨过了午休 ' + hm(WK.brkStart) + '–' +
-      hm(WK.brkEnd) + '，请拆成两段</b>';
+    html += (html ? '<br>' : '') + '<b style="color:#d6453d">跨过了午休 ' +
+      hm(WK.brkStart) + '–' + hm(WK.brkEnd) + '，请拆成两段</b>';
   }
   el.innerHTML = html;
 }
 
 function savePlanTask() {
-  const t = planTaskOf();
-  if (!t) { toast('请先选择一个任务', 'err'); return; }
+  const name = document.getElementById('pl-name').value.trim();
+  if (!name) { toast('请填写任务名称', 'err'); return; }
   const day = parseInt(document.getElementById('pl-day').value, 10) || 1;
   const r = readTimeRange('pl-from', 'pl-to');
   if (r.err) { toast(r.err, 'err'); return; }
@@ -2571,21 +2549,32 @@ function savePlanTask() {
 
   const estRaw = document.getElementById('pl-est').value.trim();
   const est = estRaw === '' ? null : (num(estRaw) || null);
-  const next = state.plan.slots
-    .concat([{ no: String(t.no), day: day, from: r.f, to: r.t }])
-    .sort((a, b) => (a.day - b.day) || (a.from - b.from));
-  const msg = '已排 ' + WK.names[day - 1] + ' ' + hm(r.f) + '–' + hm(r.t) +
-    '（' + fmtDur(r.t - r.f) + '）';
+  const quadrant = selectValue('pl-quad');
+  // "哪天"是**周内第几天**, 不是绝对日期 —— 按当前查看那一周推算: 翻到下周录入, 落的就是下周
+  const ws = parseYmd(state.plan.week_start || TODAY);
+  const sel = fmtYmd(new Date(ws.getTime() + (day - 1) * 86400000));
   closeModal('m-plan');
 
-  // 估时没改就不发多余的写请求
-  if (est === num(t.estimate_h)) { savePlan(next, msg); return; }
-  // 顺序同 saveHours: 服务端每个端点都是"读整个 JSON → 改一个字段 → 整文件写回", 并行会互相覆盖。
-  // 估时放前面(它失败还来得及停下), 时段放后面(失败时"估时已存、时段没排上"是能说清的)
-  post('/api/set_estimate', { no: String(t.no), estimate_h: est }).then(d => {
-    if (!d.ok) { toast(d.error || '预估工时保存失败', 'err'); return; }
-    t.estimate_h = est;
-    savePlan(next, msg);
+  // 一次请求写两处(任务 + 时段)。为什么不能分两步: 新任务的 no 由**服务端**分配,
+  // 前端拿不到它就没法写时段 —— 详见 serve_task_flow.py 里 /api/add_task 那段注释。
+  // est 传 null 时由服务端按本次时长兜底(与临时任务同一口径)
+  post('/api/add_task', {
+    name: name, quadrant: quadrant, estimate_h: est,
+    date: sel, from: r.f, to: r.t
+  }).then(d => {
+    if (!d.ok) { toast(d.error || '录入失败', 'err'); return; }
+    toast('已录入 No.' + d.no + '「' + name + '」 并排到 ' + WK.names[day - 1] + ' ' +
+      hm(r.f) + '–' + hm(r.t) + (d.hours ? '（' + fmtDur(d.hours) + '）' : ''), 'ok');
+    // 服务端一次写了两处, 本地这两份状态都得跟上 ——
+    // 只更新 slots 的话, 时段块会因为 byNo() 找不到这条新任务而整块不渲染
+    if (d.task && !byNo(d.no)) state.tasks.push(d.task);
+    if (state.plan.week_start === d.week_start) {
+      state.plan.slots = d.slots;
+      renderWeek();
+      render();                // 副标题与象限列表也要跟上(新任务可能直接进了某个象限)
+    } else {
+      loadWeekPlan(d.week_start);   // 录到了别的周 → 直接翻过去看
+    }
   }).catch(() => toast('连接服务器失败，请确认已启动 serve_task_flow.py', 'err'));
 }
 
@@ -3360,7 +3349,9 @@ function init() {
   WK.names = WEEK_META.names;
   WK.gridMin = WEEK_META.gridMin;
   // 时间输入框的上下界取自 WK(不写死在 HTML 里, 免得两处不一致)
-  ['sl-from', 'sl-to', 'tmp-from', 'tmp-to'].forEach(id => {
+  // 含「录入新任务」的 pl-from / pl-to —— 它们同样是手填起止的地方。真校验仍在
+  // readTimeRange(它按 WK.start/WK.end 判), 这里给的只是浏览器自带的边界提示
+  ['sl-from', 'sl-to', 'tmp-from', 'tmp-to', 'pl-from', 'pl-to'].forEach(id => {
     const el = document.getElementById(id);
     el.min = hToTime(WK.start);
     el.max = hToTime(WK.end);
@@ -3389,6 +3380,15 @@ def build_html(tasks):
 
     blocker_options = "".join(
         '<option value="%s">%s</option>' % (b, b) for b in BLOCKER_ORDER
+    )
+
+    # 四象限的 <option>(含空选项 = 未归类)。文案与任务清单页的「添加任务」保持一致 ——
+    # 两处都是"给新任务定象限", 说法不同会让人以为字段含义也不同。
+    # 默认"未归类"而不是自动判定: 象限是**判断**, 只能由人来定(§2.4 的推导仅作角标提示)
+    quad_options = '<option value="">未归类（之后在象限里归）</option>' + "".join(
+        '<option value="%s">%s · %s（%s）</option>'
+        % (q, q, QUADRANT_META[q]["label"], QUADRANT_META[q]["action"])
+        for q in QUADRANT_ORDER
     )
 
     # 机动来源的 <option> 列表。**同一份注入两处弹窗**(记临时任务 / 时段块补标),
@@ -3429,6 +3429,7 @@ def build_html(tasks):
 
     return (TEMPLATE
             .replace("__BLOCKER_OPTIONS__", blocker_options)
+            .replace("__QUAD_OPTIONS__", quad_options)
             .replace("__TASKS_JSON__", data_json)
             .replace("__QUAD_META__", js(QUADRANT_META))
             .replace("__QUAD_ORDER__", js(QUADRANT_ORDER))

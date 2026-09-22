@@ -462,7 +462,10 @@ body{{background:#f5f6f8;font-family:-apple-system,"Segoe UI","PingFang SC","Mic
 /* 弹窗 */
 .modal-bg{{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:1000}}
 .modal-bg.hide{{display:none}}
-.modal{{background:#fff;border-radius:14px;padding:24px;width:380px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,.12)}}
+/* max-height + overflow 与另外两个页面(四象限 / 项目)保持一致:
+   .modal-bg 是垂直居中的, 弹窗一旦高过视口就会**上下两端同时被裁**;
+   没有滚动的话底部按钮根本够不着(任务清单页踩过这个坑, 见 generate_tasks_view.py) */
+.modal{{background:#fff;border-radius:14px;padding:24px;width:380px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,.12);max-height:90vh;overflow-y:auto}}
 .modal h3{{font-size:16px;font-weight:700;margin-bottom:16px;color:#1f2733}}
 .modal label{{display:block;font-size:12px;color:#5a6577;margin-bottom:4px;margin-top:12px}}
 .modal input,.modal select,.modal textarea{{width:100%;padding:8px 10px;border:1px solid #d8dee9;border-radius:8px;font-size:13px;box-sizing:border-box;font-family:inherit}}

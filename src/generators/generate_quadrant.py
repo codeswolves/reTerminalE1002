@@ -466,6 +466,8 @@ TEMPLATE = r"""<!DOCTYPE html>
   }
   /* 两个并排字段(如 开始/结束): 用 grid 让两列等宽且标签对齐 */
   .modal .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  /* 三格并排(计划任务里的 开始 / 时长 / 结束) —— 三者互相联动, 排一行才看得出是一组 */
+  .modal .three { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
   /* (原先这里是一套 .stseg 并排按钮组, 用于"状态"和"机动来源"。)
      已整体换成下拉: 来源有 6 个选项, 平铺会换行且宽度参差, 看着杂乱;
      而弹窗里其余字段本来就是单行输入, 统一成下拉后反而更整齐。
@@ -553,6 +555,8 @@ TEMPLATE = r"""<!DOCTYPE html>
     .modal-actions { gap: 6px; }
     .modal-actions button { padding: 7px 10px; }
     .modal-actions .act-left { gap: 6px; }
+    /* 窄屏三格并排每格只剩 ~100px, 时间输入根本放不下 —— 改成单列 */
+    .modal .three { grid-template-columns: 1fr; }
     .blk-row { flex-direction: column; align-items: stretch; }
     /* 仪表盘 4 列在 390px 上每格只剩 ~78px, 数字会被挤到换行 —— 降到 2 列 */
     .dash { grid-template-columns: repeat(2, 1fr); gap: 8px; }
@@ -603,6 +607,8 @@ TEMPLATE = r"""<!DOCTYPE html>
         <button class="est" id="wk-back" onclick="shiftWeek(0)">回到本周</button>
         <button class="est" onclick="openArrange()"
                 title="选一批本周要做的任务，按优先级顺序自动铺进工作时间（不用一个个拖）">🗓 任务编排</button>
+        <button class="est" onclick="openPlanTask()"
+                title="给某个任务精确指定一天里的一个时段 —— 拖拽与任务编排都做不到精确指定">＋ 计划任务</button>
         <button class="est" id="wk-rev-btn" onclick="openWeekReview()">📝 自评</button>
         <button class="est" onclick="openTempTask()" title="记录突发的临时事项，直接落到时间表上">＋ 临时任务</button>
         <button class="est" onclick="clearWeek()">清空本周</button>
@@ -880,6 +886,42 @@ TEMPLATE = r"""<!DOCTYPE html>
     <div class="modal-actions">
       <button onclick="closeModal('m-arrange')">取消</button>
       <button class="btn-primary" onclick="runArrange()">一键编排</button>
+    </div>
+  </div>
+</div>
+
+<!-- 计划任务: 给**已有任务**精确排一个时段。
+     拖拽/任务编排都自动决定时长, 只有这里能直接指定"某任务 × 某天 × 某时段"。
+     与「临时任务」是两回事: 那个是新建一条时间记录(已发生的事), 这个是给已有任务排期 -->
+<div class="modal-bg hide" id="m-plan">
+  <div class="modal" style="width:440px">
+    <h3>计划任务</h3>
+    <div class="sub" id="pl-sub"></div>
+    <label>任务</label>
+    <select id="pl-task" onchange="planPickTask()"></select>
+    <label>预估工时（小时）</label>
+    <input type="number" id="pl-est" min="0" step="0.5" placeholder="留空 = 未估算">
+    <label>哪天</label>
+    <select id="pl-day" onchange="planPickDay()"></select>
+    <!-- 三格联动: 改开始或时长顺推结束, 改结束反推时长 -->
+    <div class="three">
+      <div>
+        <label>开始</label>
+        <input type="time" id="pl-from" step="600" oninput="planSync('from')">
+      </div>
+      <div>
+        <label>时长（小时）</label>
+        <input type="number" id="pl-len" min="0" step="0.5" oninput="planSync('len')">
+      </div>
+      <div>
+        <label>结束</label>
+        <input type="time" id="pl-to" step="600" oninput="planSync('to')">
+      </div>
+    </div>
+    <div class="mini" id="pl-remain"></div>
+    <div class="modal-actions">
+      <button onclick="closeModal('m-plan')">取消</button>
+      <button class="btn-primary" onclick="savePlanTask()">排进时间表</button>
     </div>
   </div>
 </div>
@@ -2367,6 +2409,184 @@ function doArrange(sel) {
       (r.missed.length > 3 ? ' 等' : '') + '）';
   }
   savePlan(next, msg);
+}
+
+/* ---------------- 计划任务(给已有任务精确排一个时段) ---------------- */
+/* 为什么单独一个入口: 现有三条录时段的路径**都做不到精确指定** ——
+   拖拽按剩余工作量自动铺开、任务编排会替换整周、时段弹窗又得先有时段。
+   这里补的是"某任务 × 某天 × 某时段"这一格空白。
+   与「临时任务」是两回事: 那个**新建一条时间记录**(已发生的事), 这个是**给已有任务排期**。*/
+
+function planTaskOf() {
+  const sel = document.getElementById('pl-task');
+  return sel && sel.value ? byNo(sel.value) : null;
+}
+
+/* 某天在 [工作开始, 工作结束) 里第一个空闲的半小时刻度。
+   只用来给个合理默认值 —— 真重叠了 savePlanTask 里还有硬校验兜着, 所以不必追求完美 */
+function planFirstFree(day) {
+  const busy = state.plan.slots.filter(s => s.day === day).map(s => [s.from, s.to]);
+  for (let h = WK.workStart; h < WK.workEnd; h += 0.5) {
+    if (inBreak(h)) continue;
+    if (!busy.some(r => h >= r[0] && h < r[1])) return h;
+  }
+  return WK.workStart;      // 那天排满了就退回起点, 让重叠校验去提示
+}
+
+/* "时长"的默认值 = 该任务的剩余工作量, 夹在 [0.5, 一天的工作窗长度] 之间。
+   这里**不扣本周已排的**(与 dragNeed 的唯一差别): 拖拽是"补缺口",
+   而用户点这个按钮是来**明确加一段**的 —— 扣掉会让默认值和他心里那个数对不上 */
+function planDefaultLen(t) {
+  const r = t ? remainOf(t) : 1;
+  const span = (WK.workEnd - WK.workStart) - (WK.brkEnd - WK.brkStart);
+  const v = r > 0.001 ? r : 1;
+  return Math.max(0.5, Math.round(Math.min(v, span) * 2) / 2);
+}
+
+/* 默认选今天(在本周内时), 否则周一 */
+function planDefaultDay() {
+  const ws = parseYmd(state.plan.week_start || TODAY);
+  const now = new Date();
+  const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const idx = Math.floor((today0 - ws.getTime()) / 86400000);
+  return (idx >= 0 && idx <= 6) ? String(idx + 1) : '1';
+}
+
+function openPlanTask() {
+  const tasks = pending().slice().sort(arrangeOrder);
+  document.getElementById('pl-task').innerHTML = tasks.length
+    ? tasks.map(t => {
+        const q = QUAD[t.quadrant];
+        const r = remainOf(t);
+        // 下拉里放得下的信息有限: 象限 + 名称 + 剩余(没有就写"未估算")
+        const tag = !num(t.estimate_h) ? '未估算'
+          : (r <= 0.001 ? '投入已满' : '剩 ' + fmt(r) + 'h');
+        return '<option value="' + esc(t.no) + '">' +
+          (q ? t.quadrant + ' · ' : '') + esc(t.name) + ' · ' + tag + '</option>';
+      }).join('')
+    : '<option value="">（没有未完成的任务）</option>';
+
+  // 周一到周日带上日期 —— 只写"周三"的话, 翻到历史周时会和真实日期对不上
+  const ws = parseYmd(state.plan.week_start || TODAY);
+  document.getElementById('pl-day').innerHTML = WK.names.map((n, i) =>
+    '<option value="' + (i + 1) + '">' + n + ' ' +
+      md(new Date(ws.getTime() + i * 86400000)) + '</option>').join('');
+  document.getElementById('pl-day').value = planDefaultDay();
+
+  document.getElementById('pl-sub').textContent =
+    state.plan.week_start + ' · 本周已排 ' +
+    fmtDur(state.plan.slots.reduce((a, x) => a + (x.to - x.from), 0)) +
+    ' / 净可安排 ' + fmtDur(weekHours());
+  planPickTask();
+  openModal('m-plan');
+}
+
+/* 换任务: 回填它的预估工时, 并把时长重置为按它算的默认值 */
+function planPickTask() {
+  const t = planTaskOf();
+  document.getElementById('pl-est').value = (t && num(t.estimate_h)) ? num(t.estimate_h) : '';
+  document.getElementById('pl-len').value = planDefaultLen(t);
+  planPickDay();
+}
+
+/* 换天: 把开始挪到那天第一个空闲位置, 再顺推结束 */
+function planPickDay() {
+  const day = parseInt(document.getElementById('pl-day').value, 10) || 1;
+  document.getElementById('pl-from').value = hToTime(planFirstFree(day));
+  planSync('len');
+}
+
+/* 开始 / 时长 / 结束 三者联动: 改开始或时长顺推结束, 改结束反推时长。
+   排期时人想的是"两点开始做一小时半"或"一直做到五点半" —— 两种说法都得能直接用 */
+function planSync(src) {
+  const f = timeToH(document.getElementById('pl-from').value);
+  const lenEl = document.getElementById('pl-len');
+  if (src === 'to') {                        // 改结束 → 反推时长
+    const len = timeToH(document.getElementById('pl-to').value) - f;
+    if (isFinite(len) && len > 0.001) lenEl.value = Math.round(len * 100) / 100;
+  } else {                                   // 改开始或时长 → 顺推结束
+    const len = parseFloat(lenEl.value);
+    if (isFinite(f) && isFinite(len) && len > 0.001) {
+      document.getElementById('pl-to').value = hToTime(Math.min(WK.end, f + len));
+    }
+  }
+  renderPlanRemain();
+}
+
+/* 预览: 预计 / 已投入 / 本次 / 排完还剩多少。
+   与时段弹窗的 renderSlotRemain 同一套说法 —— 两处读的是同一件事, 不该有两套口径 */
+function renderPlanRemain() {
+  const el = document.getElementById('pl-remain');
+  if (!el) return;
+  const t = planTaskOf();
+  if (!t) { el.innerHTML = ''; return; }
+  const total = num(t.estimate_h);
+  const used = num(t.actual_h) || 0;
+  const f = timeToH(document.getElementById('pl-from').value);
+  const tt = timeToH(document.getElementById('pl-to').value);
+  const add = (isFinite(f) && isFinite(tt) && tt > f) ? tt - f : 0;
+  let html = '本任务：' + (total ? '预计总投入 ' + fmtDur(total) : '未估算');
+  if (used > 0) html += ' · 已投入 ' + fmtDur(used);
+  if (add > 0) html += ' · 本次 ' + fmtDur(add);
+  if (total) {
+    const left = total - used - add;
+    html += ' → ' + (left < -0.001 ? '超 <b style="color:#d6453d">' + fmtDur(-left) + '</b>'
+      : left > 0.001 ? '还剩 <b>' + fmtDur(left) + '</b>'
+      : '<b style="color:#2e9e5b">刚好用完</b>');
+  }
+  // 跨午休当场就提示, 不必等到点保存才被拒 —— 拖拽与自动编排都会跳过午休, 这是全局约定
+  if (isFinite(f) && isFinite(tt) && f < WK.brkEnd - 1e-9 && tt > WK.brkStart + 1e-9) {
+    html += '<br><b style="color:#d6453d">跨过了午休 ' + hm(WK.brkStart) + '–' +
+      hm(WK.brkEnd) + '，请拆成两段</b>';
+  }
+  el.innerHTML = html;
+}
+
+function savePlanTask() {
+  const t = planTaskOf();
+  if (!t) { toast('请先选择一个任务', 'err'); return; }
+  const day = parseInt(document.getElementById('pl-day').value, 10) || 1;
+  const r = readTimeRange('pl-from', 'pl-to');
+  if (r.err) { toast(r.err, 'err'); return; }
+
+  // 跨午休要拦: 拖拽会被拒绝、自动铺开会跳过 —— "午休一般不安排工作"是全局约定。
+  // 这里是唯一由人手工指定起止的入口, 不拦的话它就成了唯一能排出跨午休块的地方,
+  // 而那样的块既不合约定, 也没法被 fillSpan 之类的自动逻辑正确处理
+  if (r.f < WK.brkEnd - 1e-9 && r.t > WK.brkStart + 1e-9) {
+    toast('这段时间跨过午休（' + hm(WK.brkStart) + '–' + hm(WK.brkEnd) + '），请拆成两段', 'err');
+    return;
+  }
+
+  // **重叠必须先挡住**: 服务端的 clean_slots 只做边界与网格清洗, **不检查重叠**。
+  // 两块叠在一起会互相压住看不清, 而且周表底部的"已安排 / 各象限 / 未归类"会重复计数。
+  // 拖拽与任务编排不会撞(它们是自动找空位); 只有这里是人手工指定, 所以只有这里要拦
+  const clash = state.plan.slots.find(s =>
+    s.day === day && r.f < s.to - 1e-9 && s.from < r.t - 1e-9);
+  if (clash) {
+    const ct = byNo(clash.no);
+    toast('这段时间和 ' + hm(clash.from) + '–' + hm(clash.to) + '（' +
+      (ct ? ct.name : 'No.' + clash.no) + '）重叠了', 'err');
+    return;
+  }
+
+  const estRaw = document.getElementById('pl-est').value.trim();
+  const est = estRaw === '' ? null : (num(estRaw) || null);
+  const next = state.plan.slots
+    .concat([{ no: String(t.no), day: day, from: r.f, to: r.t }])
+    .sort((a, b) => (a.day - b.day) || (a.from - b.from));
+  const msg = '已排 ' + WK.names[day - 1] + ' ' + hm(r.f) + '–' + hm(r.t) +
+    '（' + fmtDur(r.t - r.f) + '）';
+  closeModal('m-plan');
+
+  // 估时没改就不发多余的写请求
+  if (est === num(t.estimate_h)) { savePlan(next, msg); return; }
+  // 顺序同 saveHours: 服务端每个端点都是"读整个 JSON → 改一个字段 → 整文件写回", 并行会互相覆盖。
+  // 估时放前面(它失败还来得及停下), 时段放后面(失败时"估时已存、时段没排上"是能说清的)
+  post('/api/set_estimate', { no: String(t.no), estimate_h: est }).then(d => {
+    if (!d.ok) { toast(d.error || '预估工时保存失败', 'err'); return; }
+    t.estimate_h = est;
+    savePlan(next, msg);
+  }).catch(() => toast('连接服务器失败，请确认已启动 serve_task_flow.py', 'err'));
 }
 
 /* 把要移出的时段上记过的投入汇总成 [{no, hours}], 交给服务端一次性回退。

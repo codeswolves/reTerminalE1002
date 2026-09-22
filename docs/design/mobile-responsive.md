@@ -143,6 +143,37 @@ pg = browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True, ha
 # 检查每个元素的 getBoundingClientRect().right 是否 > document.documentElement.clientWidth
 ```
 
+### 5.6 弹窗必须设 `max-height` + 滚动
+
+**这是硬性要求，不是美化。** `.modal-bg` 是 `display:flex; align-items:center; justify-content:center`
+—— **垂直居中**。弹窗一旦高过视口，它就会**上下两端同时被裁**；此时若弹窗本身没有滚动，
+底部那排「取消 / 确认」就彻底够不着，连滑都滑不出来。
+
+任务清单页的「添加/编辑任务」就踩过：弹窗高 **825px**，在 720px 高的视口下，
+提交按钮落在 `y 716→748`（视口外），且 `scrollHeight == clientHeight`（不可滚动）。
+
+```css
+.modal { max-height: 90vh; overflow-y: auto; }
+```
+
+**配套建议（同一页已采用）**：把底部留白从 `.modal` 的 `padding-bottom` 挪到
+`.modal-actions` 自己身上，并给它 `position: sticky; bottom: 0; background: #fff` ——
+这样内容高过视口时按钮行一直吸在底部，**不用先滑到底**就能点。
+
+```css
+.modal { padding: 18px 20px 0; }                 /* 底部留白交给下一行 */
+.modal-actions { position: sticky; bottom: 0; background: #fff; padding: 9px 0 14px; }
+```
+
+各页现状（**改弹窗时对照一下**）：
+
+| 页面 | `max-height` + 滚动 | 吸底按钮 |
+|---|---|---|
+| 任务清单 `tasks_view.html` | ✅ | ✅ |
+| 四象限 `quadrant.html` | ✅（88vh）| ❌ |
+| 项目索引 / 项目图 | ✅（92vh）| ❌ |
+| 任务流程树 `task_flow.html` | ✅（90vh）| ❌ |
+
 ## 6. 相关文件
 
 - `src/generators/generate_tasks_view.py`

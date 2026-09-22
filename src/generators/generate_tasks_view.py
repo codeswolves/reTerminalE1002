@@ -224,13 +224,35 @@ def build_html(tasks):
   /* 弹窗 */
   .modal-bg {{ position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 1000; }}
   .modal-bg.hide {{ display: none; }}
-  .modal {{ background: #fff; border-radius: 14px; padding: 24px; width: 400px; max-width: 90vw; box-shadow: 0 8px 32px rgba(0,0,0,.12); }}
-  .modal h3 {{ font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #1f2733; }}
-  .modal label {{ display: block; font-size: 12px; color: #5a6577; margin-bottom: 4px; margin-top: 12px; }}
-  .modal input, .modal select, .modal textarea {{ width: 100%; padding: 8px 10px; border: 1px solid #d8dee9; border-radius: 8px; font-size: 13px; box-sizing: border-box; font-family: inherit; }}
-  .modal textarea {{ resize: vertical; min-height: 50px; }}
-  .modal-actions {{ display: flex; gap: 10px; margin-top: 18px; justify-content: flex-end; }}
-  .modal-actions button {{ padding: 7px 18px; border-radius: 8px; font-size: 13px; cursor: pointer; border: 1px solid #d8dee9; background: #fff; color: #3a4456; transition: all .15s; }}
+  /* max-height + overflow-y 是**必需**的, 不是美化: .modal-bg 是垂直居中的, 弹窗一旦
+     高过视口就会**上下两端同时被裁**, 而且没有滚动 —— 底部按钮彻底够不着。
+     (实测: 825px 高的弹窗在 720px 视口下, 提交按钮落在 y 716→748, 视口外且滚不到。)
+     底部留白交给 .modal-actions 自己带, 这样它吸底时能盖住从下方滚过去的内容 */
+  .modal {{
+    background: #fff; border-radius: 14px; padding: 18px 20px 0; width: 400px; max-width: 90vw;
+    box-shadow: 0 8px 32px rgba(0,0,0,.12);
+    max-height: 90vh; overflow-y: auto;
+  }}
+  /* 字号与行距整体压一档: 这个弹窗有 9 行字段, 每行省几 px 累积起来就是 150px 上下 */
+  .modal h3 {{ font-size: 15px; font-weight: 700; margin-bottom: 8px; color: #1f2733; }}
+  .modal label {{ display: block; font-size: 11.5px; line-height: 1.3; color: #5a6577; margin-bottom: 3px; margin-top: 8px; }}
+  .modal input, .modal select, .modal textarea {{
+    width: 100%; padding: 5px 9px; border: 1px solid #d8dee9; border-radius: 7px;
+    font-size: 12.5px; line-height: 1.4; box-sizing: border-box; font-family: inherit;
+  }}
+  .modal textarea {{ resize: vertical; min-height: 40px; }}
+  /* 按钮行**吸底**: 内容高过视口时它始终贴在底部, 不必先滑到底才看得见 */
+  .modal-actions {{
+    position: sticky; bottom: 0; background: #fff;
+    display: flex; gap: 10px; margin-top: 8px; padding: 9px 0 14px;
+    border-top: 1px solid #eef1f6; justify-content: flex-end;
+  }}
+  /* white-space: nowrap —— 中文没有词边界, flex 收缩会把按钮文字挤成两行(四象限页踩过同一个坑) */
+  .modal-actions button {{
+    padding: 6px 16px; border-radius: 7px; font-size: 12.5px; cursor: pointer;
+    border: 1px solid #d8dee9; background: #fff; color: #3a4456; transition: all .15s;
+    white-space: nowrap;
+  }}
   .modal-actions .btn-primary {{ background: #3b6fb0; color: #fff; border-color: #3b6fb0; }}
   .modal-actions .btn-primary:hover {{ background: #2d5a94; }}
 
@@ -264,7 +286,8 @@ def build_html(tasks):
     .grid {{ grid-template-columns: 1fr; }}
     .section-head {{ flex-wrap: wrap; }}
     .two {{ flex-direction: column; }}
-    .modal {{ padding: 18px; }}
+    /* 底部留白同样交给吸底的 .modal-actions, 所以这里 padding-bottom 为 0 */
+    .modal {{ padding: 14px 16px 0; }}
   }}
 
   /* 触屏没有 hover, 操作按钮不要藏得太深, 同时放大点击区域 */

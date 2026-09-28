@@ -730,6 +730,7 @@ __COMMON_CSS__
     <a class="navbtn" href="/tasks_view.html">← 任务清单</a>
     <a class="navbtn" href="/task_flow.html">流程跟踪</a>
     <a class="navbtn" href="/quadrant.html">四象限</a>
+    <a class="navbtn" href="/ideas.html">💡 灵感胶囊</a>
   </div>
   <div class="hdr">
     <div>
@@ -1144,6 +1145,8 @@ select{padding:5px 10px;border:1px solid #d8dee9;border-radius:8px;font-size:13p
 <div class="wrap">
   <div class="topbar">
     <a class="back" href="project_index.html">← 项目列表</a>
+    <!-- 绝对路径: 项目树在 output/project/ 下, 相对路径会指到 /project/ideas.html -->
+    <a class="back" href="/ideas.html">💡 灵感胶囊</a>
     <select id="proj-sel" onchange="switchProject(this.value)"></select>
     <div class="spacer"></div>
     <button class="btn" onclick="zoom(-0.1)">−</button>

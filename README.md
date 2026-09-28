@@ -16,7 +16,8 @@
 - **任务流程跟踪树**：可视化每个任务的推进节点、耗时、负责人，支持交互式增删改节点，可 📌 **置顶**当前重点任务；**已完成任务可就地打开后评估**（卡点归类）
 - **项目管理（DAG）**：多项目索引 + 从起点到结束节点的有向无环图，支持里程碑依赖、**多路汇聚**、进度跟踪与页面上直接编辑
 - **时间管理四象限**：按重要性 × 紧迫性归类任务（A/B/C/D），对比各象限预估工时占比与目标区间（A 20-25% / B 65-80% / C ≤15% / D 0）并给出偏差诊断；支持拖拽归类、工时录入、7 问自检，已完成任务可做后评估（卡点归类）；含周时间安排（拖拽排期 + 周自评 + 临时任务与每周机动额度）与仪表盘（平均完成时间、每周完成数、产出成果、估时偏差、分类投入占比、12 周趋势）
-- **移动端适配**：上述五个交互页面在手机上自动切换单列布局，触屏下放大操作按钮点击区（仪表盘为墨水屏固定 800×480，不参与适配）
+- **灵感胶囊**：专利 / 论文 idea 的专门存放处 —— 一段话回车即存（标题、标签、可能产出都可之后再补）；「久置」区把放下超过 3 周的想法摆出来（只列事实、不做判断）；两套视角（按状态 / 按产出）与筛选；卡片上可就地改状态、**优先级**、产出、标签、追加推进记录；「转成任务」把想法交棒给任务清单（原文与来源写进创建备注）
+- **移动端适配**：上述六个交互页面在手机上自动切换单列布局，触屏下放大操作按钮点击区（仪表盘为墨水屏固定 800×480，不参与适配）
 
 ## 项目结构
 
@@ -28,6 +29,7 @@ reTerminal/
 │   ├── task_flows.json          # 任务流程数据（含元数据 + 流程节点）
 │   ├── projects.json            # 项目数据（DAG：nodes 节点表 + edges 边表）
 │   ├── week_plan.json           # 周时间安排（按周存排期 / 周自评 / 机动额度）
+│   ├── ideas.json               # 灵感胶囊（专利/论文的 idea；⚠ 不要纳入公网部署）
 │   ├── goals.csv                # 论文/专利目标进度
 │   └── slogan.csv               # 口号记录
 ├── output/                      # 生成结果
@@ -39,17 +41,22 @@ reTerminal/
 │   ├── tasks/                   # 任务相关页面
 │   │   ├── tasks_view.html      # 任务清单可视化筛选页面
 │   │   ├── task_flow.html       # 任务流程跟踪树页面
-│   │   └── quadrant.html        # 时间管理四象限页面
+│   │   ├── quadrant.html        # 时间管理四象限页面
+│   │   └── ideas.html           # 灵感胶囊页面
 │   └── project/                 # 项目相关页面（⚠️ 不在仓库中，需本地生成）
 │       ├── project_index.html   # 项目索引（新建/修改/删除项目）
 │       └── project_tree.html    # 项目 DAG 图（里程碑、多路汇聚、连线）
 ├── src/                         # 全部代码
 │   ├── generators/              # HTML 生成器
-│   │   ├── meta.py                  # 分类/优先级/状态/节点类型的统一定义（单一来源）
+│   │   ├── meta.py                  # 分类/优先级/状态/象限/灵感的统一定义（单一来源）
 │   │   ├── generate_dashboard.py    # 仪表盘 HTML 生成器（核心）
 │   │   ├── generate_tasks_view.py   # 任务清单可视化页生成器
 │   │   ├── generate_task_flow.py    # 任务流程跟踪树页生成器（含任务数据层）
-│   │   └── generate_project.py      # 项目管理页生成器（含 DAG 数据层）
+│   │   ├── generate_quadrant.py     # 时间四象限页生成器（含周排期交互）
+│   │   ├── generate_ideas.py        # 灵感胶囊页生成器
+│   │   ├── generate_project.py      # 项目管理页生成器（含 DAG 数据层）
+│   │   ├── week_plan.py             # 周计划数据层（读写 + 锁 + 清洗）
+│   │   └── ideas_store.py           # 灵感数据层（读写 + 锁 + 清洗 + id 分配）
 │   ├── utils/                   # 工具脚本
 │   │   ├── serve_task_flow.py       # HTTP 服务器（静态文件 + REST API）
 │   │   ├── render_screenshot.py     # HTML → PNG 截图工具
@@ -181,6 +188,7 @@ python src/utils/serve_task_flow.py --port 8080
 # http://localhost:8080/tasks_view.html            任务清单
 # http://localhost:8080/task_flow.html             流程跟踪树
 # http://localhost:8080/quadrant.html              时间四象限
+# http://localhost:8080/ideas.html                 灵感胶囊
 # http://localhost:8080/project/project_index.html 项目索引
 # http://localhost:8080/project/project_tree.html  项目 DAG 图
 ```
@@ -216,6 +224,23 @@ python src/utils/serve_task_flow.py --port 8080
 | `POST /api/set_interrupt` | 补标 / 改标临时任务的机动来源，入参 `{"no":"47","interrupt":"他人求助"}`；空串 = 清掉标注 |
 | `POST /api/week_buffer` | 设置某周的机动额度，入参 `{"week_start":"2026/09/14","hours":8}`；空值或等于默认值（5h）= 恢复默认，不留痕 |
 | `POST /api/log_actual` | **累加**任务的累计实际投入（不是覆盖），入参 `{"no":"3","hours":0.5}`；累加在服务端做，避免多页面同时记录时互相覆盖 |
+
+灵感胶囊的接口（⚠ **挂在 `/idea_api/` 而不是 `/api/`**，理由见下表后的说明）：
+
+| 接口 | 功能 |
+|------|------|
+| `GET /idea_api/list` | 读取全部灵感（含"距上次推进多少天""久置""关联的任务是否已删除"等**计算字段**，读时现算不落盘） |
+| `POST /idea_api/add` | 新增一条灵感，入参 `{"text":"...","deliverable":["专利"],"tags":"a, b"}`；`id` 由服务端分配 |
+| `POST /idea_api/set_field` | 改一个字段，入参 `{"id":"I003","key":"priority","value":"high"}`；**空值 = 删除该字段**（回到"未评"） |
+| `POST /idea_api/add_note` | 追加一条推进记录，入参 `{"id":"I003","text":"..."}`（不改状态） |
+| `POST /idea_api/promote` | 转成任务，入参 `{"id":"I003","name":"任务名","deliverable":"论文"}`；**先建任务、再回写灵感** |
+| `POST /idea_api/unlink` | 解除与任务的关联，入参 `{"id":"I003","status":"设计中"}`（状态一起退回，避免"标着已转出却没有任务"） |
+| `POST /idea_api/delete` | 删除一条灵感（不可恢复） |
+
+⚠ **为什么灵感接口不挂在 `/api/` 下**：公网 nginx 只反代 `location /api/`，换个前缀就天然落在
+反代范围之外 —— **专利以"未公开"为新颖性的前提**，这些想法不能出现在一个无鉴权的公网端点上。
+同理，`ideas.html` **不要**纳入公网静态部署。详见
+`docs/design/inspiration-capsule-design.md` §7.4。
 
 页面特性：
 
@@ -333,6 +358,42 @@ python src/generators/generate_quadrant.py --open    # 生成后打开浏览器
 
 详细设计（象限判定、区间张力、三条定律、估时方法、后评估、第二期排程）见 [docs/design/time-quadrant-design.md](docs/design/time-quadrant-design.md)。
 
+### 3.8 灵感胶囊
+
+**专利 / 论文的 idea 专门存放处**：先封存，需要的时候才打开。
+
+```bash
+# 生成灵感页（数据来自 data/ideas.json，首次运行会自动建一个空库）
+python src/generators/generate_ideas.py
+python src/generators/generate_ideas.py --open       # 生成后打开浏览器
+
+# 通过本地服务器访问（交互功能依赖它，需先启动 serve_task_flow.py）
+# http://localhost:8080/ideas.html
+```
+
+**为什么必须单独一个页面**：`task_flows.json` 回答"这件事该怎么做完"、`projects.json` 回答
+"依赖与阶段"、`week_plan.json` 回答"这周装不装得下" —— 而灵感**还没有形状**（可能永远不落地）。
+塞进任务清单会污染三处口径：待办池数量、象限占比、完成率。
+
+**唯一的失败模式是"灵感坟场"**：只记录不回顾，它必然退化成"共 137 条，而你一条都不会再打开"。
+所以设计围绕三件事：
+
+| 环节 | 做法 |
+|------|------|
+| **捕获** | 一段话回车即存；标题 / 标签 / 可能产出都可留空，之后在卡片上补 |
+| **浮现** | 页顶「久置」区列出**放下超过 3 周**的想法（只列事实、不排序、不带评价措辞）；周自评里带一行灵感统计 |
+| **转出** | 「转成任务」把想法交棒给任务清单 —— 它开始占时间，才算真的活下来 |
+
+**几个刻意的取舍**：
+
+- **不在捕获时问优先级**：捕获时每多一个决定，就多一批想法根本不被记下来，而"没记下来"是查不出来的。
+  优先级只在**卡片上**事后标（高 / 中 / 低 / 未评），而且**不参与排序、不参与任何统计** —— 它只是一个标记
+- **不做提醒推送、不自动归档、不统计"灵感产出率"**：这三个都是"系统替你下结论"。可测的是**转出率**，那是事后统计、不是当期目标
+- **⚠ 不让它上公网**：**专利以"未公开"为新颖性的前提**，想法一旦落在公网可访问的位置就撤不回来。所以接口挂在 `/idea_api/`（公网 nginx 只反代 `/api/`），页面也**不要**纳入公网静态部署
+- **关联的任务被删了不自动改数据**：只在卡片上标 ⚠ 并给一个"解除关联"，因为自动回滚会静默改变历史
+
+详细设计（数据模型、状态机、两套视角、API 约定、已知坑）见 [docs/design/inspiration-capsule-design.md](docs/design/inspiration-capsule-design.md)。
+
 ### 4. 截图为 PNG
 
 ```bash
@@ -418,6 +479,12 @@ python src/generators/generate_dashboard.py --all
 | `--open` | 生成后打开浏览器预览 | 关闭 |
 
 ### `src/generators/generate_quadrant.py`
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--open` | 生成后打开浏览器预览 | 关闭 |
+
+### `src/generators/generate_ideas.py`
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
@@ -589,6 +656,43 @@ date,checkin,content,yesterday,today
 - 三个字段**必须一起读写**：它们共用同一个文件，只写其中一个会静默抹掉另外两个
 - 到新的一周自动切换到空白的新周（**不需要手动清空**），旧周数据保留，可翻回去看
 
+### `data/ideas.json`
+
+灵感胶囊（专利 / 论文的 idea）。**首次运行 `generate_ideas.py` 会自动建一个空库**，也可以手写。
+
+```json
+{
+  "meta": { "updated": "2026/09/29" },
+  "ideas": [
+    {
+      "id": "I007",
+      "text": "开完规划会路上想到的：现在承载网流量预测还停在 ARIMA + 人工经验规则",
+      "title": "用图神经网络做承载网流量预测",
+      "deliverable": ["专利", "论文"],
+      "status": "设计中",
+      "tags": ["承载网", "GNN"],
+      "source": "P02 项目 9 月评审会上提到的问题",
+      "created": "2026/09/20",
+      "notes": [{ "date": "2026/09/22", "text": "查了下，18 年有篇 GNN 做骨干网预测的" }],
+      "linked_task": "",
+      "priority": "high",
+      "why": ""
+    }
+  ]
+}
+```
+
+- **必填只有 `text` 与 `status`**：捕获时的摩擦每多一个字段，就多一批想法根本没被记下来，而"没记下来"是查不出来的
+- `id`：稳定标识 `I001` 起递增，页面与接口都用它（**不用数组下标** —— 删一条就会让所有引用错位）。缺失时读取会按"已用过的最大号"补一个，但只用于本次读，不回写
+- `deliverable`：**多选**，取值是任务那边 `DELIVERABLE_ORDER` 的**子集** `["专利","论文"]`（同一批字符串，转成任务时零映射）。可留空 = 尚未看出形态
+- `status`：`种子` / `设计中` / `已转出` / `封存`。**`已转出` 不能手改** —— 它只能由「转成任务」进入，且与 `linked_task` 必须同时成立，否则会出现"标着已转出、却没有对应任务"的悬空状态
+- `priority`：`high` / `medium` / `low`，**可缺省**。⚠ **缺省 = "还没评"，不是"中优先级"** —— 所以它有自己的灰色显示，不拿"中"去冒充。它**不参与排序、不参与任何统计**
+- `tags`：自由文本，**只服务检索**，不参与任何统计口径（硬把领域枚举出来的话，捕获时只会从列表里挑一个不相干的）
+- `notes`：推进记录，不是"进度节点"，是"后来又想通了什么"
+- `why`：封存原因。**你迟早会再次想到同一个想法**，那时最值钱的信息就是"上次为什么放下了"
+- **写入时守住取值域、读时不丢数据**：子集外 / 认不出的值照常读出来并显示（配色走灰兜底）—— 藏起来比显示出来更危险
+- `linked_task` 指向的任务被删除后**不自动解除、也不自动回滚状态**，只在页面上显式标出 ⚠
+
 ### `data/goals.csv`
 
 论文/专利目标进度，驱动三环仪表盘的中环和内环。
@@ -657,6 +761,7 @@ python src/utils/serve_task_flow.py --port 8080
 # http://localhost:8080/tasks_view.html            任务清单
 # http://localhost:8080/task_flow.html             流程跟踪树
 # http://localhost:8080/quadrant.html              时间四象限
+# http://localhost:8080/ideas.html                 灵感胶囊
 # http://localhost:8080/project/project_index.html 项目索引
 # http://localhost:8080/project/project_tree.html  项目 DAG 图
 ```

@@ -64,6 +64,16 @@ def priority_meta(key):
     return PRIORITY_META.get(str(key or "").strip().lower(), PRIORITY_META[DEFAULT_PRIORITY])
 
 
+def is_priority(key):
+    """取值是否是合法优先级。
+
+    写入时用它守住取值域(与 is_quadrant 同一处理)。只靠 priority_meta 的兜底不够:
+    那样一个拼错的值会照写不误, 而页面上退化成"中" —— 表现为"我明明选了高、却显示中",
+    文件里其实已经脏了。
+    """
+    return str(key or "").strip().lower() in PRIORITY_META
+
+
 # ---------------------------------------------------------------------------
 # 任务状态
 # ---------------------------------------------------------------------------
@@ -221,6 +231,51 @@ DELIVERABLE_META = {
     "文章":     {"color": "#d6453d", "hint": "博客/公众号等对外文章"},
     "其他":     {"color": "#8893a7", "hint": "不在上述类型内的可交付物"},
 }
+
+
+# ---------------------------------------------------------------------------
+# 灵感胶囊 (docs/design/inspiration-capsule-design.md §2)
+# ---------------------------------------------------------------------------
+# 灵感的"可能产出"是 DELIVERABLE_ORDER 的**子集**, 不是另立一套枚举:
+# 它回答的是同一个问题("这东西要产出什么"), 而且**转成任务时零映射**(§2.3) ——
+# 另立一套就得再维护一张对照表, 而两张表迟早对不上。将来要加回一种? 改这一行即可。
+IDEA_DELIVERABLE_ORDER = ["专利", "论文"]
+
+# 灵感状态机(§2.4)。**配色只用于元信息行里的图标与文字, 不做成色块角标** ——
+# 卡片上的色块已经给了"产出"和"优先级", 再挤进第三种彩色元素, 三种颜色互相抵消,
+# 反而谁也看不出来(与四象限页"一块地方两种含义 = 等于没有颜色"是同一条理由)。
+#
+# `已转出` 是绿色, 因为它**已经交棒**了 —— 这是本页唯一"活下来"的状态。
+IDEA_STATUS_ORDER = ["种子", "设计中", "已转出", "封存"]
+
+IDEA_STATUS_META = {
+    "种子":   {"icon": "○", "color": "#8893a7", "hint": "刚记下，还没细想"},
+    "设计中": {"icon": "✎", "color": "#3b6fb0", "hint": "在想 / 在查文献 / 在找人聊"},
+    "已转出": {"icon": "→", "color": "#2e9e5b", "hint": "已转成任务，交棒给任务清单"},
+    "封存":   {"icon": "▣", "color": "#7c6bc4", "hint": "想过了，暂时不做"},
+}
+
+DEFAULT_IDEA_STATUS = "种子"
+
+
+def idea_status_meta(key):
+    """取灵感状态的展示信息; 未知或缺失时回退到默认状态。"""
+    return IDEA_STATUS_META.get(str(key or "").strip(), IDEA_STATUS_META[DEFAULT_IDEA_STATUS])
+
+
+def is_idea_status(key):
+    """取值是否是合法灵感状态。写入时守住取值域(与 is_quadrant / is_priority 同一处理)。"""
+    return str(key or "").strip() in IDEA_STATUS_META
+
+
+def idea_priority_meta(key):
+    """优先级的展示信息; **未评时返回 None**(而不是回退到"中")。
+
+    灵感与任务在这里**刻意不同**: 任务新建时必须带一个优先级(后端有 DEFAULT_PRIORITY 兜底),
+    而灵感不逼人当场下判断 —— 与四象限页"象限留空 = 未归类、不自动判定"是同一条理由(§2.2)。
+    "还没评"是个真实的、合法的状态, 所以它有自己的展示(灰), 不能拿"中"去冒充它。
+    """
+    return PRIORITY_META.get(str(key or "").strip().lower())
 
 
 def deliverable_meta(key):

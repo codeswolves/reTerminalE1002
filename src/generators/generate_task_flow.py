@@ -537,6 +537,7 @@ body{{background:#f5f6f8;font-family:-apple-system,"Segoe UI","PingFang SC","Mic
       <!-- 相对路径: 本地服务器与博客平铺部署(任务页都在站点根)两种情况下都成立。
            写死公网域名会让本地打开时莫名跳到线上 —— 见设计文档 §7.1 -->
       <a class="back-link" href="tasks_view.html">← 返回任务清单</a>
+      <a class="back-link" href="ideas.html">💡 灵感胶囊</a>
       <h1>🌳 任务流程跟踪树</h1>
       <div class="sub" id="sub"></div>
     </div>

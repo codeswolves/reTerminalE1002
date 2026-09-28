@@ -55,13 +55,16 @@ def step_generate(date=None, style=None):
 
 
 def step_generate_tasks():
-    """步骤2: 生成任务页面（tasks_view + task_flow + quadrant + project）"""
+    """步骤2: 生成任务页面（tasks_view + task_flow + quadrant + project + ideas）"""
     print()
     print("=" * 50)
     print("[STEP 2/4] 生成任务页面")
     print("=" * 50)
     ok = True
-    for script in ["generate_tasks_view.py", "generate_task_flow.py", "generate_quadrant.py", "generate_project.py"]:
+    # generate_ideas.py 不能漏(设计文档 §9 第 6 项): 漏了它, 灵感页只在本地手动生成时
+    # 才更新, 而其它页面每天都刷 —— 会出现"任务页是今天的、灵感页是上周的"
+    for script in ["generate_tasks_view.py", "generate_task_flow.py", "generate_quadrant.py",
+                   "generate_project.py", "generate_ideas.py"]:
         cmd = [sys.executable, str(SRC_DIR.parent / "generators" / script)]
         result = subprocess.run(cmd, cwd=str(BASE_DIR))
         if result.returncode != 0:

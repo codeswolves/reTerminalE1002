@@ -40,9 +40,20 @@ from meta import (  # noqa: E402
     DEFAULT_CATEGORY,
     DEFAULT_PRIORITY,
     DELIVERABLE_META,
+    IDEA_DELIVERABLE_ORDER,
     INTERRUPT_META,
     STATUS_ORDER,
+    is_priority,
     is_quadrant,
+)
+from ideas_store import (  # noqa: E402
+    add_idea,
+    add_idea_note,
+    delete_idea,
+    mark_promoted,
+    read_ideas,
+    set_idea_field,
+    unlink_idea,
 )
 from week_plan import (  # noqa: E402
     BREAK_END,
@@ -198,6 +209,38 @@ def parse_slot_list(data):
     return info
 
 
+# ---------------------------------------------------------------------------
+# 灵感胶囊的接口辅助
+# ---------------------------------------------------------------------------
+def _ok_err(ok, res):
+    """把 ideas_store 的 `(ok, res)` 转成接口响应体。
+
+    store 的约定是: 成功时 res 是数据(dict), 失败时 res 是给人看的一句话。
+    几个端点全是这一个形状, 各写一遍必然有一处漏掉 error —— 而漏掉的那处会静默失败。
+    """
+    if ok:
+        out = {"ok": True}
+        if isinstance(res, dict):
+            out.update(res)
+        return out
+    return {"ok": False, "error": str(res)}
+
+
+def _idea_note_text(idea):
+    """转成任务时, 写进新任务"创建"节点备注的内容(§5.4 第 3 条)。
+
+    为什么要把原文搬过去: 想法会演化, **原始表述有独立价值** —— 转出时提炼出的那个任务名
+    是"整理过的版本", 而"当时到底是怎么想的"只有原文里有(写专利交底、论文相关工作
+    最后都要回到它)。顺带带上编号, 以后从任务能一步找回灵感。
+
+    只带 `text` 与 `source`: 推进记录留在灵感页, 灵感原文也不删(§5.4 第 6 条), 不做二次搬运。
+    """
+    text = str(idea.get("text") or "").strip()
+    src = str(idea.get("source") or "").strip()
+    head = f"〔灵感 {idea.get('id')}〕" if idea.get("id") else ""
+    return head + text + (f"（来源：{src}）" if src else "")
+
+
 class TaskFlowHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=OUTPUT_DIR, **kwargs)
@@ -303,6 +346,12 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
             self._send_json(read_week_plan(week))
         elif path == "/api/projects":
             self._send_json(build_projects())
+        elif path == "/idea_api/list":
+            # ⚠ 灵感接口**刻意挂在 /idea_api/ 而不是 /api/**(§7.4):
+            # 公网 nginx 只反代 location /api/, 换个前缀就天然落在反代范围之外。
+            # 专利以"未公开"为新颖性前提, 这些想法不能出现在无鉴权的公网端点上 ——
+            # 这条路径名本身也在提醒后来者别把它挪回去
+            self._send_json(read_ideas())
         elif path.startswith("/project/"):
             rel = unquote(path[len("/project/"):]) or "project_index.html"
             self._send_file(self._safe_project_path(rel))
@@ -388,7 +437,11 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
         elif path == "/api/add_task":
             data = self._read_body()
             task_name = data.get("name", "").strip()
-            priority = data.get("priority", DEFAULT_PRIORITY).strip()
+            # 空值 = 用默认; 非空但不在取值域里则拒绝 —— 与下面的象限同一处理
+            priority = str(data.get("priority") or DEFAULT_PRIORITY).strip().lower()
+            if not is_priority(priority):
+                self._send_json({"ok": False, "error": f"非法优先级: {priority}"})
+                return
             category = data.get("category", DEFAULT_CATEGORY).strip()
             quadrant = str(data.get("quadrant") or "").strip().upper()
             if quadrant and not is_quadrant(quadrant):
@@ -626,7 +679,11 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
                     return
                 target["name"] = name
             if "priority" in data:
-                target["priority"] = str(data.get("priority") or DEFAULT_PRIORITY).strip()
+                pri = str(data.get("priority") or DEFAULT_PRIORITY).strip().lower()
+                if not is_priority(pri):
+                    self._send_json({"ok": False, "error": f"非法优先级: {pri}"})
+                    return
+                target["priority"] = pri
             if "category" in data:
                 target["category"] = str(data.get("category") or DEFAULT_CATEGORY).strip()
             # 四象限: 传空值 = 取消归类(删除字段), 与置顶的处理方式一致
@@ -977,6 +1034,99 @@ class TaskFlowHandler(SimpleHTTPRequestHandler):
                              "slots": plan["slots"],
                              "review": plan["review"],
                              "undone": undone})
+
+        # ---------------- 灵感胶囊 ----------------
+        # 全部挂在 /idea_api/ 前缀下, **不是 /api/**(§7.4): 公网 nginx 只反代
+        # location /api/, 换个前缀就天然落在反代范围之外 —— 专利想法的页面与接口
+        # 都不该出现在无鉴权的公网端点上。与四象限页同一套约定:
+        # 每个端点都是"读整个 JSON → 改一个字段 → 整文件写回", 所以**前端必须串行提交**
+        elif path == "/idea_api/add":
+            data = self._read_body()
+            self._send_json(_ok_err(*add_idea(
+                data.get("text"), data.get("deliverable"), data.get("tags"))))
+
+        elif path == "/idea_api/set_field":
+            data = self._read_body()
+            self._send_json(_ok_err(*set_idea_field(
+                data.get("id"), data.get("key"), data.get("value"))))
+
+        elif path == "/idea_api/add_note":
+            data = self._read_body()
+            self._send_json(_ok_err(*add_idea_note(data.get("id"), data.get("text"))))
+
+        elif path == "/idea_api/unlink":
+            # 解除与任务的关联(§7.6)。用户在卡片上点了才会走到这里 ——
+            # 系统的行为仍然是"什么都不自动做": 关联的任务被删了只显示 ⚠, 不改数据
+            data = self._read_body()
+            self._send_json(_ok_err(*unlink_idea(data.get("id"), data.get("status"))))
+
+        elif path == "/idea_api/delete":
+            data = self._read_body()
+            self._send_json(_ok_err(*delete_idea(data.get("id"))))
+
+        elif path == "/idea_api/promote":
+            data = self._read_body()
+            idea_id = str(data.get("id") or "").strip()
+            name = str(data.get("name") or "").strip()
+            deliverable = str(data.get("deliverable") or "").strip()
+            if not name:
+                self._send_json({"ok": False, "error": "任务名不能为空"})
+                return
+            if deliverable and deliverable not in IDEA_DELIVERABLE_ORDER:
+                self._send_json({"ok": False,
+                                 "error": f"主产出只能是 {' / '.join(IDEA_DELIVERABLE_ORDER)}"})
+                return
+            found = [x for x in read_ideas(with_task_check=False) if x["id"] == idea_id]
+            if not found:
+                self._send_json({"ok": False, "error": f"灵感 {idea_id} 不存在"})
+                return
+            idea = found[0]
+
+            # 顺序不能反(§7.1): **先建任务 → 再回写灵感**。
+            # 反过来(先标已转出、再建任务)中途失败会留下"灵感说已转出、任务却不存在" ——
+            # 灵感页看起来一切正常, 这种脏数据没人会发现。这个顺序失败则留下
+            # "任务建好了、灵感还停在设计中", 是明面上的不一致, 重试或手动关联即可。
+            # 两个文件各有各的锁, 做不到事务, 所以只能靠顺序 + 明确回报
+            tasks = read_tasks_raw()
+            max_no = 0
+            for t in tasks:
+                try:
+                    n = int(str(t.get("no", "0")))
+                    if n > max_no:
+                        max_no = n
+                except (ValueError, TypeError):
+                    pass
+            new_no = str(max_no + 1)
+            today_str = date.today().strftime("%Y/%m/%d")
+
+            new_task = {
+                "no": new_no,
+                "name": name,
+                "date": today_str,
+                # 优先级跟着带过去: 人在灵感上已经明确判断过一次, 到任务这边悄悄变回
+                # "中"就是一次无声的降级。没评过才用任务的默认值(§5.4 的"不带过去"
+                # 指的是象限与估时 —— 那两个是"还没到判断的时候", 优先级不是)
+                "priority": idea.get("priority") or DEFAULT_PRIORITY,
+                "category": DEFAULT_CATEGORY,
+                "nodes": [{"phase": "创建", "date": today_str, "progress": 0,
+                           "note": _idea_note_text(idea), "owner": ""}],
+            }
+            # 产出: 带上人在弹窗里确认过的主产出(单选)。象限与估时**不**带(§5.4 第 4 条):
+            # 留空 = 未归类 / 未估算, 两处都遵守"不替人判断、未估算 ≠ 0"
+            if deliverable:
+                new_task["deliverable"] = deliverable
+            tasks.append(new_task)
+            write_tasks_raw(tasks)
+
+            ok, res = mark_promoted(idea_id, new_no)
+            if not ok:
+                # 不能说笼统的"失败": 任务其实已经建出来了, 人会重试 —— 然后建出第二条
+                self._send_json({"ok": False, "no": new_no,
+                                 "error": f"任务已创建（No.{new_no}），"
+                                          f"但灵感状态没回写成功：{res}"})
+                return
+            created = next((t for t in read_tasks() if str(t.get("no")) == new_no), None)
+            self._send_json({"ok": True, "no": new_no, "task": created, "idea_id": idea_id})
 
         else:
             self.send_error(404)

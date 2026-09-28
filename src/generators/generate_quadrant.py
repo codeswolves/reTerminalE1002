@@ -25,7 +25,7 @@ import json
 import os
 import sys
 import webbrowser
-from datetime import date
+from datetime import date, timedelta
 
 # ----------------------------------------------------------------------------
 # 路径
@@ -64,6 +64,8 @@ from meta import (  # noqa: E402
     js,
 )
 from generate_task_flow import read_tasks  # noqa: E402
+from ideas_store import parse_date as parse_idea_date  # noqa: E402
+from ideas_store import read_ideas  # noqa: E402
 from week_plan import (  # noqa: E402
     BREAK_END,
     BREAK_START,
@@ -594,6 +596,7 @@ TEMPLATE = r"""<!DOCTYPE html>
       <!-- 相对链接: 项目页在 output/project/ 下, 靠服务端的 PROJECT_PAGES 路由转发
            (公网博客是把它们平铺在站点根目录, 所以不能用 ../project/ 这种本地路径) -->
       <a class="nav-link" href="project_index.html">项目管理</a>
+      <a class="nav-link" href="ideas.html">💡 灵感胶囊</a>
     </div>
   </div>
 
@@ -970,6 +973,9 @@ const CAT_ORDER = __CAT_ORDER__;
 const DL = __DELIVERABLE_META__;
 const DL_ORDER = __DELIVERABLE_ORDER__;
 const INTERRUPT = __INTERRUPT_META__;
+// 灵感胶囊的条数快照(生成时算好, 见 build_html)。只用于周自评里那一行提示,
+// **不参与任何统计口径** —— 灵感不进象限占比的分母
+const IDEA_STATS = __IDEA_STATS__;
 const BUDGET = __BUDGET__;
 const WEEK_META = __WEEK_META__;
 const WEEK_PLAN = __WEEK_PLAN__;
@@ -3112,10 +3118,23 @@ function openWeekReview() {
   const bufEl = document.getElementById('wrev-buf');
   if (bufEl) {
     const brk = tempBreakHtml();
-    bufEl.innerHTML = brk
+    let bufHtml = brk
       ? '本周机动：已用 <b>' + fmtDur(tempHours()) + '</b> / 额度 ' + fmtDur(weekBufferH()) +
         '<br>构成：' + brk
       : '';
+    // 灵感胶囊也摆在这儿(设计文档 §4.2): 复盘时顺手看见"攒了几条、有几条搁下了"。
+    // **只报事实** —— "2 条超过 3 周未动"是事实, "该处理一下了"才是判断, 而判断留给人。
+    // "本周 +N" 只在看本周时显示: 翻到历史周还报"本周新增"会和标题自相矛盾
+    if (IDEA_STATS) {
+      const bits = [];
+      if (isThis && IDEA_STATS.week_new) bits.push('本周 +' + IDEA_STATS.week_new + ' 条');
+      bits.push('设计中 ' + IDEA_STATS.designing + ' 条');
+      if (IDEA_STATS.stale) bits.push('（' + IDEA_STATS.stale + ' 条超过 3 周未动）');
+      bufHtml += (bufHtml ? '<br>' : '') +
+        '<span style="color:#a8801f">💡 灵感胶囊：' + bits.join(' · ') +
+        '　<a class="wk-edit" href="ideas.html">打开</a></span>';
+    }
+    bufEl.innerHTML = bufHtml;
   }
   openModal('m-wrev');
 }
@@ -3494,6 +3513,23 @@ def build_html(tasks):
     }
     plan = read_week_plan()
 
+    # 灵感胶囊(设计文档 §4.2 的第二个浮现机制): 写周自评时顺手看见"攒了几条、有几条搁下了"。
+    # ⚠ 这只是**展示**, 灵感不参与任何统计口径(§7.3): 它的 estimate_h 是空的, 摆进象限占比
+    # 的分母会系统性摊薄所有比例。所以这里只是生成时的一个快照, 也不是实时数 ——
+    # 有价值的是"复盘时眼睛扫到", 不是"精确到此刻"
+    try:
+        _ideas = read_ideas(with_task_check=False)
+    except Exception:                                    # noqa: BLE001 — 灵感库读不到不该打挂四象限页
+        _ideas = []
+    _monday = date.today() - timedelta(days=date.today().weekday())
+    idea_stats = {
+        "week_new": sum(1 for x in _ideas
+                        if (parse_idea_date(x.get("created")) or date.min) >= _monday),
+        "designing": sum(1 for x in _ideas if x.get("status") == "设计中"),
+        # 久置 = "设计中"且超过 STALE_DAYS 没动(§4.2 的第一个机制)
+        "stale": sum(1 for x in _ideas if x.get("stale")),
+    }
+
     return (TEMPLATE
             .replace("__BLOCKER_OPTIONS__", blocker_options)
             .replace("__QUAD_OPTIONS__", quad_options)
@@ -3508,6 +3544,7 @@ def build_html(tasks):
             .replace("__DELIVERABLE_META__", js(DELIVERABLE_META))
             .replace("__DELIVERABLE_ORDER__", js(DELIVERABLE_ORDER))
             .replace("__INTERRUPT_META__", js(INTERRUPT_META))
+            .replace("__IDEA_STATS__", js(idea_stats))
             .replace("__INTERRUPT_OPTIONS__", interrupt_options)
             .replace("__BUDGET__", js(budget))
             .replace("__WEEK_META__", js(week_meta))

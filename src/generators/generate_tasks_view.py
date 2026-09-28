@@ -308,6 +308,7 @@ def build_html(tasks):
       <a class="proj-link" href="quadrant.html" title="打开时间四象限页">🧭 四象限</a>
       <a class="proj-link" href="task_flow.html" title="打开任务流程跟踪树">🌳 流程跟踪</a>
       <a class="proj-link" href="project_index.html" title="打开项目索引页">📁 项目管理</a>
+      <a class="proj-link" href="ideas.html" title="打开灵感胶囊页（专利/论文的 idea 存放处）">💡 灵感胶囊</a>
     </div>
     <div class="stats">
       <div class="stat"><b id="stat-done">-</b><span>已完成</span></div>

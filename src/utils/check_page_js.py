@@ -23,6 +23,7 @@ DEFAULT_PAGES = [
     os.path.join(BASE_DIR, "output", "tasks", "quadrant.html"),
     os.path.join(BASE_DIR, "output", "tasks", "tasks_view.html"),
     os.path.join(BASE_DIR, "output", "tasks", "task_flow.html"),
+    os.path.join(BASE_DIR, "output", "tasks", "ideas.html"),
     os.path.join(BASE_DIR, "output", "project", "project_index.html"),
     os.path.join(BASE_DIR, "output", "project", "project_tree.html"),
 ]

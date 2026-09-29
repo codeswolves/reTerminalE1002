@@ -1858,14 +1858,26 @@ function hm(h) {
   return Math.floor(t / 60) + ':' + two(t % 60);
 }
 
-/* 浮点小时 <-> <input type="time"> 的 "HH:MM" */
+/* 浮点小时 <-> <input type="time"> 的 "HH:MM"。
+   **要对 24 小时取模**: 窗口右端是 24:00(加班到午夜), 而 HTML 的 time 输入框取值域只有
+   00:00–23:59 —— 写成 "24:00" 浏览器直接判非法, 字段会**变空**。所以 24:00 在这里写作
+   "00:00"(午夜的标准写法), 再由 timeToHEnd 认回去。取模而不是特判: 它对任何越界值都成立 */
 function hToTime(h) {
-  const t = Math.round(h * 60);
+  const t = Math.round(h * 60) % 1440;
   return two(Math.floor(t / 60)) + ':' + two(t % 60);
 }
 function timeToH(v) {
   const m = String(v || '').match(/^(\d{1,2}):(\d{2})$/);
   return m ? (+m[1] * 60 + +m[2]) / 60 : NaN;
+}
+/* 读**结束**时间框: "00:00" 表示午夜(24:00)。
+   为什么需要它: 见 hToTime —— time 输入框装不下 24:00, 只能拿 00:00 表示, 不认回来的话
+   一个"到午夜"的时段被打开再保存就会变成"结束早于开始"。
+   **不会歧义**: 窗口从 08:00 开始, 所以"开始 = 0:00"根本进不来(spanErr 会按
+   "时间要在 8:00 – 24:00 之间"拒掉)。 */
+function timeToHEnd(v) {
+  const h = timeToH(v);
+  return (h === 0 && /^\s*0{1,2}:0{2}\s*$/.test(String(v || ''))) ? WK.end : h;
 }
 /* 时长是否是时间网格的整数倍(GRID_MIN 分钟)。
 
@@ -1894,10 +1906,11 @@ function spanErr(f, t) {
   return '';
 }
 
-/* 读并校验一对时间输入框。通过返回 {f, t}, 否则返回 {err} */
+/* 读并校验一对时间输入框。通过返回 {f, t}, 否则返回 {err}
+   结束走 timeToHEnd: 那个框里的 "00:00" 表示午夜 */
 function readTimeRange(fromId, toId) {
   const f = timeToH(document.getElementById(fromId).value);
-  const t = timeToH(document.getElementById(toId).value);
+  const t = timeToHEnd(document.getElementById(toId).value);
   const e = spanErr(f, t);
   return e ? { err: e } : { f: f, t: t };
 }
@@ -2528,7 +2541,7 @@ function planSync(src) {
   const f = timeToH(document.getElementById('pl-from').value);
   const lenEl = document.getElementById('pl-len');
   if (src === 'to') {                        // 改结束 → 反推时长
-    const len = timeToH(document.getElementById('pl-to').value) - f;
+    const len = timeToHEnd(document.getElementById('pl-to').value) - f;
     if (isFinite(len) && len > 0.001) lenEl.value = Math.round(len * 100) / 100;
   } else {                                   // 改开始或时长 → 顺推结束
     const len = parseFloat(lenEl.value);
@@ -2550,7 +2563,7 @@ function renderPlanRemain() {
   const el = document.getElementById('pl-remain');
   if (!el) return;
   const f = timeToH(document.getElementById('pl-from').value);
-  const tt = timeToH(document.getElementById('pl-to').value);
+  const tt = timeToHEnd(document.getElementById('pl-to').value);
   const ok = isFinite(f) && isFinite(tt) && tt > f;
   // 起止/时长不合法就**当场**说 —— 否则要等到点保存才被拒, 那时别的字段都填完了。
   // 复用 spanErr: 屏幕上说的和保存时说的必须是同一句(见它的注释)
@@ -3439,7 +3452,10 @@ function init() {
   ['sl-from', 'sl-to', 'tmp-from', 'tmp-to', 'pl-from', 'pl-to'].forEach(id => {
     const el = document.getElementById(id);
     el.min = hToTime(WK.start);
-    el.max = hToTime(WK.end);
+    // max **不能**写 hToTime(WK.end): 它把 24:00 输出成 "00:00"(见 hToTime 的注释),
+    // 而 max="00:00" 会让浏览器把所有取值都判成超界。取 23:59 —— 那才是 time 输入框
+    // 能表示的最后一分钟; 要填午夜就填 00:00, 由 timeToHEnd 认回 24:00
+    el.max = hToTime(WK.end - 1 / 60);
   });
   // 填"这次实际做了多少"时实时预览还剩多少
   document.getElementById('sl-done').addEventListener('input', renderSlotRemain);
